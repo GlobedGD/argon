@@ -35,9 +35,5 @@ target_link_libraries(${PROJECT_NAME} geode-sdk)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 
 # Add asp
-CPMAddPackage("gh:dankmeme01/asp2#ec0d9fc")
+CPMAddPackage("gh:dankmeme01/asp2#2e7e109")
 target_link_libraries(${PROJECT_NAME} asp)
-
-if (WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_definitions(asp PRIVATE _HAS_ITERATOR_DEBUGGING=0)
-endif()
