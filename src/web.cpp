@@ -2,6 +2,7 @@
 
 #include "state.hpp"
 
+#include <Geode/binding/GJMoreGamesLayer.hpp>
 #include <Geode/loader/Loader.hpp>
 #include <Geode/loader/Mod.hpp>
 #include "external/ServerAPIEvents.hpp"
