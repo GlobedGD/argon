@@ -57,6 +57,30 @@ Result<> startAuth(AuthCallback callback, AuthProgressCallback progress, bool fo
     return startAuthWithAccount(std::move(data), std::move(callback), std::move(progress), forceStrong);
 }
 
+AuthLoginTask startAuthWithAccount(AccountData account, bool forceStrong) {
+    auto [task, post, prog, cancel] = AuthLoginTask::spawn();
+
+    if (auto err = startAuthWithAccount(account, post, prog, forceStrong).err())
+        post(Err(*err));
+
+    return task;
+}
+
+AuthLoginTask startAuth(bool forceStrong) {
+    auto [task, post, prog, cancel] = AuthLoginTask::spawn();
+
+    auto data = getGameAccountData();
+    if (data.accountId <= 0 || data.userId <= 0) {
+        Result<std::string> err = Err("Not logged into a Geometry Dash account");
+        post(Err("Not logged into a Geometry Dash account"));
+    }
+
+    if (auto err = startAuthWithAccount(data, post, prog, forceStrong).err())
+        post(Err(*err));
+
+    return task;
+}
+
 Result<> startAuthWithAccount(AccountData account, AuthCallback callback, AuthProgressCallback progress, bool forceStrong) {
     auto& argon = ArgonState::get();
     auto _ = argon.lockServerUrl();

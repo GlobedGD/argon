@@ -31,6 +31,7 @@ namespace argon {
     using AuthCallback = std::function<void(geode::Result<std::string>)>;
     using TroubleshootCallback = std::function<void(geode::Result<>)>;
     using AuthProgressCallback = std::function<void(AuthProgress)>;
+    using AuthLoginTask = geode::Task<geode::Result<std::string>, AuthProgress>;
 
     // Collects the account data of the currently logged in user. Not thread-safe.
     AccountData getGameAccountData();
@@ -66,8 +67,20 @@ namespace argon {
     //
     // This function can be safely called from any thread, and it won't block the thread.
     // **NOTE**: If calling not from main thread, make sure to call `argon::initConfigLock` at least once in your mod,
-    // on the main thread and before calling this function. `$on_mod(Loaded)` can be a good place if this is not an early-load mod,
+    // on the main thread and before calling this function. `$on_mod(Loaded)` can be a good place if this is not an early-load mod.
     geode::Result<> startAuthWithAccount(AccountData account, AuthCallback callback, AuthProgressCallback progress = {}, bool forceStrong = false);
+
+    // Wrapper around startAuthWithAccount that returns an awaitable Task
+    // This function can be safely called from any thread, and it won't block the thread.
+    // **NOTE**: If calling not from main thread, make sure to call `argon::initConfigLock` at least once in your mod,
+    // on the main thread and before calling this function. `$on_mod(Loaded)` can be a good place if this is not an early-load mod.
+    AuthLoginTask startAuthWithAccount(AccountData account, bool forceStrong);
+
+    // Wrapper around startAuth that returns an awaitable Task
+    // **NOTE**: this function is not thread-safe. This function does not block, but if you still want to start auth on another thread,
+    // you should first collect user's credentials with `argon::getGameAccountData` on main thread, and then call `argon::startAuthWithAccount` on your thread.
+    // Additionally, make sure to call `argon::initConfigLock` at least once **on the main thread** before starting the auth attempt.
+    AuthLoginTask startAuth(bool forceStrong);
 
     /* Managing tokens */
 
