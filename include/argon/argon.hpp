@@ -74,13 +74,13 @@ namespace argon {
     // This function can be safely called from any thread, and it won't block the thread.
     // **NOTE**: If calling not from main thread, make sure to call `argon::initConfigLock` at least once in your mod,
     // on the main thread and before calling this function. `$on_mod(Loaded)` can be a good place if this is not an early-load mod.
-    AuthLoginTask startAuthWithAccount(AccountData account, bool forceStrong);
+    AuthLoginTask startAuthWithAccount(AccountData account, bool forceStrong = false);
 
     // Wrapper around startAuth that returns an awaitable Task
     // **NOTE**: this function is not thread-safe. This function does not block, but if you still want to start auth on another thread,
     // you should first collect user's credentials with `argon::getGameAccountData` on main thread, and then call `argon::startAuthWithAccount` on your thread.
     // Additionally, make sure to call `argon::initConfigLock` at least once **on the main thread** before starting the auth attempt.
-    AuthLoginTask startAuth(bool forceStrong);
+    AuthLoginTask startAuth(bool forceStrong = false);
 
     /* Managing tokens */
 
