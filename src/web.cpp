@@ -50,14 +50,29 @@ std::string getBaseServerUrl() {
     // in the main game executable
     char* originalUrl = nullptr;
 #ifdef GEODE_IS_WINDOWS
-    static_assert(GEODE_COMP_GD_VERSION == 22074, "Unsupported GD version");
-    originalUrl = (char*)(base::get() + 0x53ea48);
+    #if GEODE_COMP_GD_VERSION == 22074
+        originalUrl = (char*)(base::get() + 0x53ea48);
+    #elif GEODE_COMP_GD_VERSION == 22080
+        originalUrl = (char*)(base::get() + 0x557b98);
+    #else
+        static_assert(false, "Unsupported GD version");
+    #endif
 #elif defined(GEODE_IS_ARM_MAC)
-    static_assert(GEODE_COMP_GD_VERSION == 22074, "Unsupported GD version");
-    originalUrl = (char*)(base::get() + 0x7749fb);
+    #if GEODE_COMP_GD_VERSION == 22074
+        originalUrl = (char*)(base::get() + 0x7b1e2c);
+    #elif GEODE_COMP_GD_VERSION == 22080
+        originalUrl = (char*)(base::get() + 0x77d110);
+    #else
+        static_assert(false, "Unsupported GD version");
+    #endif
 #elif defined(GEODE_IS_INTEL_MAC)
-    static_assert(GEODE_COMP_GD_VERSION == 22074, "Unsupported GD version");
-    originalUrl = (char*)(base::get() + 0x8516bf);
+    #if GEODE_COMP_GD_VERSION == 22074
+        originalUrl = (char*)(base::get() + 0x8516bf);
+    #elif GEODE_COMP_GD_VERSION == 22080
+        originalUrl = (char*)(base::get() + 0x868750);
+    #else
+        static_assert(false, "Unsupported GD version");
+    #endif
 #elif defined(GEODE_IS_ANDROID64)
     static_assert(GEODE_COMP_GD_VERSION == 22074, "Unsupported GD version");
     originalUrl = (char*)(base::get() + (isAmazonStore ? 0xea27f8 : 0xEA2988));
