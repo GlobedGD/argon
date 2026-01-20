@@ -49,7 +49,7 @@ static std::string handleApiError(web::WebResponse* response, std::string_view w
     if (response->code() == -1) {
         // curl error, request did not even reach the server
         std::string fullmsg = std::move(str);
-        auto& emsg = response->errorMessage();
+        auto emsg = response->errorMessage();
         if (!emsg.empty()) {
             if (fullmsg.empty()) {
                 fullmsg = emsg;
