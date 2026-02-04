@@ -1,6 +1,9 @@
 #include "ArgonState.hpp"
 #include "WebData.hpp"
 #include "Web.hpp"
+#ifdef GEODE_IS_ANDROID
+#include <Geode/binding/GJMoreGamesLayer.hpp>
+#endif
 #include <Geode/loader/Mod.hpp>
 #include <asp/iter.hpp>
 
@@ -197,7 +200,7 @@ Future<Result<>> submitGDMessage(const AccountData& account, int target, std::st
     auto payload = fmt::format(
         "accountID={}&gjp2={}&gameVersion=22&binaryVersion=45"
         "&secret=Wmfd2893gb7&toAccountID={}&subject={}&body={}",
-        account.accountId, account.gjp2, target, base64Encode(gd::string{message}),
+        account.accountId, account.gjp2, target, base64Encode(gd::string{message.data(), message.size()}),
         base64EncodeEnc("This is a message sent to verify your account, it can be safely deleted.", "14251")
     );
 
