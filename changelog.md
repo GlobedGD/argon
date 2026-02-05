@@ -1,3 +1,7 @@
+# 1.4.2
+
+* Fix Android builds by @hiimjasmine00 in #7
+
 # 1.4.1
 
 * Fix compilation on MSVC
