@@ -147,9 +147,12 @@ Future<Result<Stage1ResponseData>> startChallenge(const AccountData& account, st
         {"preferred", preferredMethod}
     });
 
+    auto url = argon.makeUrl("v1/challenge/start");
+    log::debug("(Argon) requesting challenge with url: {}", url);
+
     auto response = co_await baseRequest()
         .bodyJSON(payload)
-        .post(argon.makeUrl("v1/challenge/start"));
+        .post(std::move(url));
 
     ARC_CO_UNWRAP_INTO(response, wrapResponse("challenge start", std::move(response)));
     co_return extractData<Stage1ResponseData>(response);

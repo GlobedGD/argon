@@ -162,6 +162,11 @@ AuthFuture startAuth(AuthOptions options) {
         co_return Ok(std::move(*token));
     }
 
+    log::debug(
+        "(Argon) Starting authentication for account {} ({}), server: '{}'",
+        options.account.username, options.account.accountId, options.account.serverUrl
+    );
+
     auto progress = [&](AuthProgress p) {
         if (options.progress) options.progress(p);
     };
