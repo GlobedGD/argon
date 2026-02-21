@@ -77,6 +77,11 @@ std::string getBaseServerUrl() {
         ret.pop_back();
     }
 
+    if (!ret.starts_with("http")) {
+        log::error("(Argon) the base server URL does not appear to be valid: '{}'", ret);
+        log::error("(Argon) the offset may be invalid, we used base + {:x} (alt: {})", isAmazonStore ? g_urlOffset.alt : g_urlOffset.value, isAmazonStore);
+    }
+
     return ret;
 }
 

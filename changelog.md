@@ -1,3 +1,7 @@
+# 1.4.3
+
+* Fix incorrect URL offsets on Android causing verification failure
+
 # 1.4.2
 
 * Fix Android builds by @hiimjasmine00 in #7
