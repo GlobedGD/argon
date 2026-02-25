@@ -1,3 +1,7 @@
+# 1.4.5
+
+* Actually fix early load crashing on MacOS (I even tested!)
+
 # 1.4.4
 
 * Add `queueInMainThread` to main thread ID assignment, fixing crash if your mod is early load
