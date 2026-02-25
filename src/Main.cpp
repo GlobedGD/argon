@@ -225,7 +225,11 @@ $execute {
         Loader::get()->queueInMainThread([] {
             // once we have main thread, actually set it
             g_mainThreadId = std::this_thread::get_id();
-            ArgonState::get().initConfigLock();
+            Loader::get()->queueInMainThread([] {
+                // on macos, two queues are needed to get to the *real* director thread :)
+                g_mainThreadId = std::this_thread::get_id();
+                ArgonState::get().initConfigLock();
+            });
         });
     }, -10000).leak();
 }
