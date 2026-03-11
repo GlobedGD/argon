@@ -1,3 +1,7 @@
+# 1.4.6
+
+* Fix use after free bug that caused auth failures
+
 # 1.4.5
 
 * Actually fix early load crashing on MacOS (I even tested!)
