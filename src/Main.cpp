@@ -138,7 +138,7 @@ inline std::string solveChallenge(int value) {
 static Future<Result<>> submitSolution(const AccountData& account, std::string_view solution, int id) {
     auto text = fmt::format("#ARGON# {}", solution);
 
-    return web::submitGDMessage(account, id, text);
+    co_return co_await web::submitGDMessage(account, id, text);
 }
 
 static Future<std::string> troubleshootFailureCause(const AccountData& account) {
