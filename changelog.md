@@ -1,3 +1,7 @@
+# 1.4.7
+
+* Make `getGameAccountData` print a warning instead of crashing when called off main thread
+
 # 1.4.6
 
 * Fix use after free bug that caused auth failures

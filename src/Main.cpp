@@ -30,15 +30,14 @@ static bool isMainThread() {
 static void requireMainThread(std::string message) {
     if (isMainThread()) return;
 
-    log::error("Argon - thread safety violation detected");
+    log::warn("Argon - thread safety violation detected");
     if (!g_mainThreadId) {
-        log::error("Load event was never ran - we don't know which thread is main.");
-        log::error("Did you attempt to start authentication before the mod was fully loaded?");
+        log::warn("Load event was never ran - we don't know which thread is main.");
+        log::warn("Did you attempt to start authentication before the mod was fully loaded?");
     }
 
-    geode::utils::terminate(
-        fmt::format("{}\n\nPlease refer to the Argon README for information on how to use Argon in a thread-safe manner.", message)
-    );
+    log::warn("{}", message);
+    log::warn("Please refer to the Argon README for information on how to use Argon in a thread-safe manner.");
 }
 
 std::string_view authProgressToString(AuthProgress progress) {
