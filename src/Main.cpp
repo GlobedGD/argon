@@ -140,12 +140,18 @@ static Future<Result<>> submitSolution(const AccountData& account, std::string_v
     co_return co_await web::submitGDMessage(account, id, text);
 }
 
-static Future<std::string> troubleshootFailureCause(const AccountData& account) {
+static Future<std::string> troubleshootFailureCause(const AccountData& account, int targetId) {
     auto result = co_await web::checkGDMessageLimit(account);
     if (result.isErr()) {
         co_return std::move(result).unwrapErr();
     }
-    co_return "Stage 2 failed due to unknown error, auth and message limit are OK";
+
+    result = co_await web::checkGDUserNotBlocked(account, targetId);
+    if (result.isErr()) {
+        co_return std::move(result).unwrapErr();
+    }
+
+    co_return "Stage 2 failed due to unknown error, all sanity checks succeeded";
 }
 
 AuthFuture startAuth(AuthOptions options) {
@@ -179,7 +185,7 @@ AuthFuture startAuth(AuthOptions options) {
     auto solution = solveChallenge(s1data.challenge);
     auto s2res = co_await submitSolution(options.account, solution, s1data.id);
     if (!s2res) {
-        co_return Err(co_await troubleshootFailureCause(options.account));
+        co_return Err(co_await troubleshootFailureCause(options.account, s1data.id));
     }
 
     progress(AuthProgress::VerifyingChallenge);

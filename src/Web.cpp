@@ -279,4 +279,42 @@ Future<Result<>> checkGDMessageLimit(const AccountData& account) {
     co_return Ok();
 }
 
+Future<Result<>> checkGDUserNotBlocked(const AccountData& account, int targetUser) {
+    auto payload = fmt::format(
+        "accountID={}&gjp2={}&gameVersion=22&binaryVersion=45"
+        "&secret=Wmfd2893gb7&type=1&dvs=3",
+        account.accountId, account.gjp2
+    );
+
+    auto response = co_await baseGDRequest()
+        .bodyString(payload)
+        .post(fmt::format("{}/getGJUserList20.php", account.serverUrl));
+
+    ARC_CO_UNWRAP_INTO(response, wrapResponse("fetch GD blocklist", std::move(response)));
+    auto str = response.string().unwrapOrDefault();
+    if (str.empty()) {
+        co_return Err(wrapError(response, "fetch GD messages"));
+    }
+
+    if (str == "-1") {
+        co_return Err("Invalid account credentials, please try to Refresh Login in account settings");
+    } else if (str == "-2") {
+        co_return Ok();
+    } else if (str.starts_with("-")) {
+        co_return Err("Unexpected server response while fetching blocklist: {}", str);
+    }
+
+    std::string targetStr = fmt::to_string(targetUser);
+
+    for (auto user : asp::iter::split(str, "|")) {
+        for (auto [k, v] : asp::iter::split(user, ':').arrayChunks<2>()) {
+            if (k == "16" && v == targetStr) {
+                co_return Err("You have blocked the authentication bot account, please unblock it and try again");
+            }
+        }
+    }
+
+    co_return Ok();
+}
+
 }

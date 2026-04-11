@@ -26,5 +26,6 @@ arc::Future<geode::Result<>> submitGDMessage(const AccountData& account, int tar
 arc::Future<geode::Result<>> deleteGDMessage(const AccountData& account, int id);
 arc::Future<geode::Result<>> submitGDComment(const AccountData& account, int target, std::string_view message);
 arc::Future<geode::Result<>> checkGDMessageLimit(const AccountData& account);
+arc::Future<geode::Result<>> checkGDUserNotBlocked(const AccountData& account, int targetUser);
 
 }

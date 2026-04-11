@@ -1,3 +1,7 @@
+# 1.4.8
+
+* Check if the user has the auth bot account blocked upon auth failure, and return a special message
+
 # 1.4.7
 
 * Make `getGameAccountData` print a warning instead of crashing when called off main thread

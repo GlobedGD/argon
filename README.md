@@ -18,7 +18,7 @@ Benefits compared to some of the other auth APIs (Globed, DashAuth, GDAuth):
 First, add Argon to the `CMakeLists.txt` of your mod:
 
 ```cmake
-CPMAddPackage("gh:GlobedGD/argon@1.4.7")
+CPMAddPackage("gh:GlobedGD/argon@1.4.8")
 target_link_libraries(${PROJECT_NAME} argon)
 ```
 
