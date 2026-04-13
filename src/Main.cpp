@@ -161,6 +161,13 @@ AuthFuture startAuth(AuthOptions options) {
 
     auto& argon = ArgonState::get();
 
+    // ensure config lock is initialized
+    if (!argon.isConfigLockInitialized()) {
+        co_await geode::async::waitForMainThread([] {
+            ArgonState::get().initConfigLock();
+        });
+    }
+
     // use cached token if possible
     if (auto token = ArgonStorage::get().getAuthToken(options.account, argon.getServerUrl())) {
         log::debug("(Argon) Using cached auth token for account {}", options.account.username);
@@ -225,8 +232,6 @@ AuthFuture startAuth(AuthOptions options) {
 
 $execute {
     ModStateEvent(ModEventType::Loaded, Mod::get()).listen([] {
-        ArgonState::get().initConfigLock();
-
         // set the entry thread as main for now, if a mod decides to use argon in $on_mod
         g_mainThreadId = std::this_thread::get_id();
         Loader::get()->queueInMainThread([] {
@@ -235,6 +240,7 @@ $execute {
             Loader::get()->queueInMainThread([] {
                 // on macos, two queues are needed to get to the *real* director thread :)
                 g_mainThreadId = std::this_thread::get_id();
+                ArgonState::get().initConfigLock();
             });
         });
     }, -10000).leak();
