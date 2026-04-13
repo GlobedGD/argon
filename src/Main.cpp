@@ -225,6 +225,8 @@ AuthFuture startAuth(AuthOptions options) {
 
 $execute {
     ModStateEvent(ModEventType::Loaded, Mod::get()).listen([] {
+        ArgonState::get().initConfigLock();
+
         // set the entry thread as main for now, if a mod decides to use argon in $on_mod
         g_mainThreadId = std::this_thread::get_id();
         Loader::get()->queueInMainThread([] {
@@ -233,7 +235,6 @@ $execute {
             Loader::get()->queueInMainThread([] {
                 // on macos, two queues are needed to get to the *real* director thread :)
                 g_mainThreadId = std::this_thread::get_id();
-                ArgonState::get().initConfigLock();
             });
         });
     }, -10000).leak();
