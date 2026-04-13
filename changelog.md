@@ -1,3 +1,7 @@
+# 1.4.9
+
+* Fix rare crash due to `initConfigLock` being called too late if a mod spawned `startAuth` in `$on_mod(Loaded)` or another early place
+
 # 1.4.8
 
 * Check if the user has the auth bot account blocked upon auth failure, and return a special message
