@@ -273,7 +273,7 @@ Future<Result<>> checkGDMessageLimit(const AccountData& account) {
     }
 
     if (msgCount == 50) {
-        co_return Err("Sent message limit reached, please try deleting some sent messages");
+        co_return Err("Sent message limit reached, please open your GD profile, go to the Sent Messages tab (not received), delete some messages and try again.");
     }
 
     co_return Ok();
