@@ -1,3 +1,8 @@
+# 1.5.0
+
+* Add support for account verification through the "Custom" profile field, as a fallback if message verification fails. This was added primarily because RobTop recently made comment bans affect messages too, causing comment banned users to be unable to obtain an Argon token.
+* Make `startAuth` fully thread-safe on its own without requiring extra effort from the user
+
 # 1.4.9
 
 * Fix rare crash due to `initConfigLock` being called too late if a mod spawned `startAuth` in `$on_mod(Loaded)` or another early place
