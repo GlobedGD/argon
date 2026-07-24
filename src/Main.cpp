@@ -18,28 +18,6 @@ namespace argon {
 
 static std::optional<std::thread::id> g_mainThreadId;
 
-static bool isMainThread() {
-    if (!g_mainThreadId) {
-        // try to be safe and not always return false
-        return geode::utils::thread::getName() == "Main";
-    }
-
-    return std::this_thread::get_id() == *g_mainThreadId;
-}
-
-static void requireMainThread(std::string message) {
-    if (isMainThread()) return;
-
-    log::warn("Argon - thread safety violation detected");
-    if (!g_mainThreadId) {
-        log::warn("Load event was never ran - we don't know which thread is main.");
-        log::warn("Did you attempt to start authentication before the mod was fully loaded?");
-    }
-
-    log::warn("{}", message);
-    log::warn("Please refer to the Argon README for information on how to use Argon in a thread-safe manner.");
-}
-
 std::string_view authProgressToString(AuthProgress progress) {
     switch (progress) {
         case AuthProgress::RequestedChallenge:
@@ -60,8 +38,6 @@ std::string_view authProgressToString(AuthProgress progress) {
 }
 
 AccountData getGameAccountData() {
-    requireMainThread("`argon::getGameAccountData` called not in main thread - this is a bug in your mod, GD account data should only be accessed from the main thread.");
-
     int accountId = GJAccountManager::get()->m_accountID;
     int userId = GameManager::get()->m_playerUserID;
     std::string username = GJAccountManager::get()->m_username;
@@ -126,7 +102,7 @@ bool hasToken(const AccountData& account) {
 }
 
 
-AuthFuture startAuth(AccountData data) {
+AuthFuture startAuth(std::optional<AccountData> data) {
     return startAuth(AuthOptions{ .account = std::move(data) });
 }
 
@@ -134,69 +110,64 @@ inline std::string solveChallenge(int value) {
     return fmt::to_string(value ^ 0x5F3759DF);
 }
 
-static Future<Result<>> submitSolution(const AccountData& account, std::string_view solution, int id) {
-    auto text = fmt::format("#ARGON# {}", solution);
+static Future<Result<>> submitSolution(const AccountData& account, std::string_view method, std::string_view solution, int id) {
+    if (method == "message") {
+        auto text = fmt::format("#ARGON# {}", solution);
+        co_return co_await web::submitGDMessage(account, id, text);
+    } else if (method == "profile_field") {
+        ARC_CO_UNWRAP_INTO(auto data, co_await web::getCurrentProfileData(account));
+        data.custom = fmt::format("aRg{}", solution);
 
-    co_return co_await web::submitGDMessage(account, id, text);
+        co_return co_await web::submitGDUpdateProfile(account, std::move(data));
+    } else {
+        co_return Err("Unknown challenge method: {}", method);
+    }
 }
 
-static Future<std::string> troubleshootFailureCause(const AccountData& account, int targetId) {
-    auto result = co_await web::checkGDMessageLimit(account);
-    if (result.isErr()) {
-        co_return std::move(result).unwrapErr();
-    }
+static Future<std::string> troubleshootFailureCause(const AccountData& account, std::string_view method, int targetId) {
+    if (method == "message") {
+        auto result = co_await web::checkGDMessageLimit(account);
+        if (result.isErr()) {
+            co_return std::move(result).unwrapErr();
+        }
 
-    result = co_await web::checkGDUserNotBlocked(account, targetId);
-    if (result.isErr()) {
-        co_return std::move(result).unwrapErr();
+        result = co_await web::checkGDUserNotBlocked(account, targetId);
+        if (result.isErr()) {
+            co_return std::move(result).unwrapErr();
+        }
+    } else if (method == "profile_field") {
+        // only 1 possible failure
+        co_return "Invalid account credentials, please try to Refresh Login in account settings";
     }
 
     co_return "Stage 2 failed due to unknown error, all sanity checks succeeded";
 }
 
-AuthFuture startAuth(AuthOptions options) {
-    if (!options.account.valid()) {
-        co_return Err("Invalid account data");
-    }
+struct SuccessfulAttempt {
+    web::SuccessfulVerification verif;
+    web::Stage1ResponseData s1data;
+};
 
-    auto& argon = ArgonState::get();
-
-    // ensure config lock is initialized
-    if (!argon.isConfigLockInitialized()) {
-        co_await geode::async::waitForMainThread([] {
-            ArgonState::get().initConfigLock();
-        });
-    }
-
-    // use cached token if possible
-    if (auto token = ArgonStorage::get().getAuthToken(options.account, argon.getServerUrl())) {
-        log::debug("(Argon) Using cached auth token for account {}", options.account.username);
-        co_return Ok(std::move(*token));
-    }
-
-    log::debug(
-        "(Argon) Starting authentication for account {} ({}), server: '{}'",
-        options.account.username, options.account.accountId, options.account.serverUrl
-    );
-
+static Future<Result<SuccessfulAttempt>> performAttempt(
+    std::string_view method,
+    AuthOptions& options
+) {
     auto progress = [&](AuthProgress p) {
         if (options.progress) options.progress(p);
     };
 
     progress(AuthProgress::RequestedChallenge);
-    ARC_CO_UNWRAP_INTO(auto s1data, co_await web::startChallenge(options.account, "message", options.forceStrong));
-
-    // TODO: in future try falling back to comment auth
+    ARC_CO_UNWRAP_INTO(auto s1data, co_await web::startChallenge(*options.account, method, options.forceStrong));
 
     progress(AuthProgress::SolvingChallenge);
     auto solution = solveChallenge(s1data.challenge);
-    auto s2res = co_await submitSolution(options.account, solution, s1data.id);
+    auto s2res = co_await submitSolution(*options.account, method, solution, s1data.id);
     if (!s2res) {
-        co_return Err(co_await troubleshootFailureCause(options.account, s1data.id));
+        co_return Err(co_await troubleshootFailureCause(*options.account, method, s1data.id));
     }
 
     progress(AuthProgress::VerifyingChallenge);
-    ARC_CO_UNWRAP_INTO(auto vdata, co_await web::verifyChallenge(options.account, s1data.challengeId, solution));
+    ARC_CO_UNWRAP_INTO(auto vdata, co_await web::verifyChallenge(*options.account, s1data.challengeId, solution));
 
     auto startedAt = asp::Instant::now();
     auto latestDeadline = startedAt + asp::Duration::fromSecs(30);
@@ -221,28 +192,82 @@ AuthFuture startAuth(AuthOptions options) {
         }
 
         // poll again
-        ARC_CO_UNWRAP_INTO(vdata, co_await web::verifyChallengePoll(options.account, s1data.challengeId, solution));
+        ARC_CO_UNWRAP_INTO(vdata, co_await web::verifyChallengePoll(*options.account, s1data.challengeId, solution));
     }
 
-    auto& verif = std::get<web::SuccessfulVerification>(vdata);
-    argon.handleSuccessfulAuth(options.account, verif.authtoken, s1data.ident, verif.commentId);
+    co_return Ok(SuccessfulAttempt {
+        .verif = std::get<web::SuccessfulVerification>(vdata),
+        .s1data = std::move(s1data)
+    });
+}
 
-    co_return Ok(std::move(verif.authtoken));
+AuthFuture startAuth(AuthOptions options) {
+    if (!options.account) {
+        // no account, fetch it
+        options.account = *co_await async::waitForMainThread<AccountData>(getGameAccountData);
+    }
+
+    if (!options.account->valid()) {
+        co_return Err("Invalid account data");
+    }
+
+    auto& account = *options.account;
+    auto& argon = ArgonState::get();
+
+    // ensure config lock is initialized
+    if (!argon.isConfigLockInitialized()) {
+        co_await async::waitForMainThread([] {
+            ArgonState::get().initConfigLock();
+        });
+    }
+
+    // use cached token if possible
+    if (auto token = ArgonStorage::get().getAuthToken(account, argon.getServerUrl())) {
+        log::debug("(Argon) Using cached auth token for account {}", account.username);
+        co_return Ok(std::move(*token));
+    }
+
+    log::debug(
+        "(Argon) Starting authentication for account {} ({}), server: '{}'",
+        account.username, account.accountId, account.serverUrl
+    );
+
+    std::vector<std::string> remainingMethods {
+        "message",
+        "profile_field"
+    };
+    std::vector<std::string> failures;
+
+    while (!remainingMethods.empty()) {
+        std::string_view method = remainingMethods.front();
+        log::debug("(Argon) trying method: {}", method);
+        auto attempt = co_await performAttempt(method, options);
+        if (!attempt) {
+            log::warn("(Argon) {} failed: {}", method, attempt.unwrapErr());
+            failures.push_back(fmt::format("{}: {}", method, attempt.unwrapErr()));
+            remainingMethods.erase(remainingMethods.begin());
+            continue;
+        }
+
+        auto& att = attempt.unwrap();
+        argon.handleSuccessfulAuth(account, att.verif.authtoken, att.s1data.ident, att.verif.commentId);
+
+        co_return Ok(std::move(att.verif.authtoken));
+    }
+
+    // if we reached here, this means all methods have failed!
+    StringBuffer<> out;
+    out.append("All authentication methods failed:\n");
+    for (auto& f : failures) {
+        out.append(" - {}\n", f);
+    }
+
+    co_return Err(out.str());
 }
 
 $execute {
     ModStateEvent(ModEventType::Loaded, Mod::get()).listen([] {
-        // set the entry thread as main for now, if a mod decides to use argon in $on_mod
-        g_mainThreadId = std::this_thread::get_id();
-        Loader::get()->queueInMainThread([] {
-            // once we have main thread, actually set it
-            g_mainThreadId = std::this_thread::get_id();
-            Loader::get()->queueInMainThread([] {
-                // on macos, two queues are needed to get to the *real* director thread :)
-                g_mainThreadId = std::this_thread::get_id();
-                ArgonState::get().initConfigLock();
-            });
-        });
+        ArgonState::get().initConfigLock();
     }, -10000).leak();
 }
 

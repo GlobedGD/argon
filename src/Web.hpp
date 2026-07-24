@@ -9,7 +9,20 @@ std::string getBaseServerUrl();
 
 struct SuccessfulVerification {
     std::string authtoken;
-    int commentId;
+    int commentId = 0;
+};
+
+struct UpdateProfilePayload {
+    int messages;
+    int friendRequests;
+    int commentHistory;
+    std::string youtube;
+    std::string twitter;
+    std::string twitch;
+    std::string instagram;
+    std::string tiktok;
+    std::string discord;
+    std::string custom;
 };
 
 struct PollLater {
@@ -23,9 +36,12 @@ arc::Future<VerifyResult> verifyChallenge(const AccountData& account, uint32_t c
 arc::Future<VerifyResult> verifyChallengePoll(const AccountData& account, uint32_t challengeId, std::string_view solution);
 
 arc::Future<geode::Result<>> submitGDMessage(const AccountData& account, int target, std::string_view message);
+arc::Future<geode::Result<>> submitGDUpdateProfile(const AccountData& account, UpdateProfilePayload payload);
 arc::Future<geode::Result<>> deleteGDMessage(const AccountData& account, int id);
 arc::Future<geode::Result<>> submitGDComment(const AccountData& account, int target, std::string_view message);
 arc::Future<geode::Result<>> checkGDMessageLimit(const AccountData& account);
 arc::Future<geode::Result<>> checkGDUserNotBlocked(const AccountData& account, int targetUser);
+
+arc::Future<geode::Result<web::UpdateProfilePayload>> getCurrentProfileData(const AccountData& account);
 
 }

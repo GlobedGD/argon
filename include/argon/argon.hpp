@@ -57,13 +57,14 @@ namespace argon {
 
     struct AuthOptions  {
         AuthProgressCallback progress;
-        AccountData account;
+        std::optional<AccountData> account;
         bool forceStrong = false;
     };
 
     // Returns a future that will start authentication and return the authtoken once completed.
     // Shorthand for `startAuth({ .account = data })`
-    AuthFuture startAuth(AccountData data = getGameAccountData());
+    // If account data is not provided, it will be fetched later, which will add a 1-2 frame delay due to waiting for main thread.
+    AuthFuture startAuth(std::optional<AccountData> data = std::nullopt);
 
     // Returns a future that will start authentication and return the authtoken once completed.
     AuthFuture startAuth(AuthOptions options);

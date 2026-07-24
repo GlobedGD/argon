@@ -18,7 +18,7 @@ Benefits compared to some of the other auth APIs (Globed, DashAuth, GDAuth):
 First, add Argon to the `CMakeLists.txt` of your mod:
 
 ```cmake
-CPMAddPackage("gh:GlobedGD/argon@1.4.9")
+CPMAddPackage("gh:GlobedGD/argon@1.5.0")
 target_link_libraries(${PROJECT_NAME} argon)
 ```
 
@@ -58,19 +58,6 @@ async::spawn(
         // handle result
     }
 );
-```
-
-**NOTE:** Calling `argon::startAuth` is NOT thread-safe unless you supply account data yourself. When you call `startAuth()` with no arguments, Argon has to call `argon::getGameAccountData`, which can **only** happen in the main thread. In the rare case that you must create the auth future while inside an async task or another thread, do this:
-
-```cpp
-// On main thread, before authentication
-auto accountData = argon::getGameAccountData();
-
-// Simulate thread/task creation
-async::spawn([data = std::move(accountData)] -> arc::Future<> {
-    // This is fine now, startAuth is safe if we pass account data to it
-    argon::startAuth(data);
-});
 ```
 
 If running into token validation issues, tokens should be cleared before attempting to authenticate again:

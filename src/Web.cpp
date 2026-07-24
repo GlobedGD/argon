@@ -135,6 +135,30 @@ static WebRequest baseGDRequest() {
         .timeout(std::chrono::seconds(20));
 }
 
+struct Form {
+    StringBuffer<> buf;
+
+    Form& param(std::string_view key, std::string_view value) {
+        if (buf.size() > 0) {
+            buf.append('&');
+        }
+
+        buf.append(key);
+        buf.append('=');
+        buf.append(value);
+        return *this;
+    }
+
+    template <std::integral T>
+    Form& param(std::string_view key, T value) {
+        return param(key, fmt::to_string(value));
+    }
+
+    std::string str() {
+        return buf.str();
+    }
+};
+
 Result<WebResponse> wrapResponse(std::string_view what, WebResponse response) {
     if (response.ok()) return Ok(std::move(response));
     return Err(wrapError(response, what));
@@ -205,15 +229,17 @@ Future<VerifyResult> verifyChallengePoll(const AccountData& account, uint32_t ch
 }
 
 Future<Result<>> submitGDMessage(const AccountData& account, int target, std::string_view message) {
-    auto payload = fmt::format(
-        "accountID={}&gjp2={}&gameVersion=22&binaryVersion=45"
-        "&secret=Wmfd2893gb7&toAccountID={}&subject={}&body={}",
-        account.accountId, account.gjp2, target, base64Encode(gd::string{message.data(), message.size()}),
-        base64EncodeEnc("This is a message sent to verify your account, it can be safely deleted.", "14251")
-    );
-
     auto response = co_await baseGDRequest()
-        .bodyString(payload)
+        .bodyString(Form{}
+            .param("accountID", account.accountId)
+            .param("gjp2", account.gjp2)
+            .param("gameVersion", "22")
+            .param("binaryVersion", "45")
+            .param("secret", "Wmfd2893gb7")
+            .param("toAccountID", target)
+            .param("subject", base64Encode(gd::string{message.data(), message.size()}))
+            .param("body", base64EncodeEnc("This is a message sent to verify your account, it can be safely deleted.", "14251"))
+            .str())
         .post(fmt::format("{}/uploadGJMessage20.php", account.serverUrl));
     ARC_CO_UNWRAP_INTO(response, wrapResponse("GD message", std::move(response)));
 
@@ -225,16 +251,48 @@ Future<Result<>> submitGDMessage(const AccountData& account, int target, std::st
     co_return Ok();
 }
 
-Future<Result<>> deleteGDMessage(const AccountData& account, int id) {
-    auto payload = fmt::format(
-        "accountID={}&gjp2={}&gameVersion=22&binaryVersion=45"
-        "&secret=Wmfd2893gb7&isSender=1&messageID={}",
-        account.accountId, account.gjp2, id
-    );
+Future<Result<>> submitGDUpdateProfile(const AccountData& account, UpdateProfilePayload payload) {
+    auto response = co_await baseGDRequest()
+        .bodyString(Form{}
+            .param("accountID", account.accountId)
+            .param("gjp2", account.gjp2)
+            .param("gameVersion", "22")
+            .param("binaryVersion", "45")
+            .param("secret", "Wmfv3899gc9")
+            .param("mS", payload.messages)
+            .param("frS", payload.friendRequests)
+            .param("cS", payload.commentHistory)
+            .param("yt", payload.youtube)
+            .param("twitter", payload.twitter)
+            .param("twitch", payload.twitch)
+            .param("instagram", payload.instagram)
+            .param("tiktok", payload.tiktok)
+            .param("discord", payload.discord)
+            .param("custom", payload.custom)
+            .str())
+        .post(fmt::format("{}/updateGJAccSettings20.php", account.serverUrl));
+    ARC_CO_UNWRAP_INTO(response, wrapResponse("GD update account", std::move(response)));
 
+    auto res = response.string().unwrapOrDefault();
+    if (res.empty() || res == "-1") {
+        co_return Err(wrapError(response, "GD update account"));
+    }
+
+    co_return Ok();
+}
+
+Future<Result<>> deleteGDMessage(const AccountData& account, int id) {
     // delete the message
     auto response = co_await baseGDRequest()
-        .bodyString(payload)
+        .bodyString(Form{}
+            .param("accountID", account.accountId)
+            .param("gjp2", account.gjp2)
+            .param("gameVersion", "22")
+            .param("binaryVersion", "45")
+            .param("secret", "Wmfd2893gb7")
+            .param("isSender", 1)
+            .param("messageID", id)
+            .str())
         .post(fmt::format("{}/deleteGJMessages20.php", account.serverUrl));
 
     ARC_CO_UNWRAP_INTO(response, wrapResponse("delete GD message", std::move(response)));
@@ -247,14 +305,17 @@ Future<Result<>> submitGDComment(const AccountData& account, int target, std::st
 }
 
 Future<Result<>> checkGDMessageLimit(const AccountData& account) {
-    auto payload = fmt::format(
-        "accountID={}&gjp2={}&gameVersion=22&binaryVersion=45"
-        "&secret=Wmfd2893gb7&count=50&page=7&getSent=1",
-        account.accountId, account.gjp2
-    );
-
     auto response = co_await baseGDRequest()
-        .bodyString(payload)
+        .bodyString(Form{}
+            .param("accountID", account.accountId)
+            .param("gjp2", account.gjp2)
+            .param("gameVersion", "22")
+            .param("binaryVersion", "45")
+            .param("secret", "Wmfd2893gb7")
+            .param("count", 50)
+            .param("page", 7)
+            .param("getSent", 1)
+            .str())
         .post(fmt::format("{}/getGJMessages20.php", account.serverUrl));
 
     ARC_CO_UNWRAP_INTO(response, wrapResponse("fetch GD messages", std::move(response)));
@@ -280,14 +341,16 @@ Future<Result<>> checkGDMessageLimit(const AccountData& account) {
 }
 
 Future<Result<>> checkGDUserNotBlocked(const AccountData& account, int targetUser) {
-    auto payload = fmt::format(
-        "accountID={}&gjp2={}&gameVersion=22&binaryVersion=45"
-        "&secret=Wmfd2893gb7&type=1&dvs=3",
-        account.accountId, account.gjp2
-    );
-
     auto response = co_await baseGDRequest()
-        .bodyString(payload)
+        .bodyString(Form{}
+            .param("accountID", account.accountId)
+            .param("gjp2", account.gjp2)
+            .param("gameVersion", "22")
+            .param("binaryVersion", "45")
+            .param("secret", "Wmfd2893gb7")
+            .param("type", 1)
+            .param("dvs", 3)
+            .str())
         .post(fmt::format("{}/getGJUserList20.php", account.serverUrl));
 
     ARC_CO_UNWRAP_INTO(response, wrapResponse("fetch GD blocklist", std::move(response)));
@@ -315,6 +378,50 @@ Future<Result<>> checkGDUserNotBlocked(const AccountData& account, int targetUse
     }
 
     co_return Ok();
+}
+
+
+Future<Result<web::UpdateProfilePayload>> getCurrentProfileData(const AccountData& account) {
+    auto response = co_await baseGDRequest()
+        .bodyString(Form{}
+            .param("targetAccountID", account.accountId)
+            .param("gameVersion", "22")
+            .param("binaryVersion", "45")
+            .param("secret", "Wmfd2893gb7")
+            .param("dvs", 3)
+            .str())
+        .post(fmt::format("{}/getGJUserInfo20.php", account.serverUrl));
+
+    ARC_CO_UNWRAP_INTO(response, wrapResponse("fetch GD profile", std::move(response)));
+    auto str = response.string().unwrapOrDefault();
+    if (str.empty()) {
+        co_return Err(wrapError(response, "fetch GD profile"));
+    }
+
+    if (str == "-1") {
+        co_return Err("User not found");
+    }
+
+    web::UpdateProfilePayload out;
+
+    for (auto [k, v] : asp::iter::split(str, ':').arrayChunks<2>()) {
+        int key = utils::numFromString<int>(k).unwrapOr(-1);
+
+        switch (key) {
+            case 18: out.messages = utils::numFromString<int>(v).unwrapOr(0); break;
+            case 19: out.friendRequests = utils::numFromString<int>(v).unwrapOr(0); break;
+            case 50: out.commentHistory = utils::numFromString<int>(v).unwrapOr(0); break;
+            case 20: out.youtube = v; break;
+            case 44: out.twitter = v; break;
+            case 45: out.twitch = v; break;
+            case 58: out.discord = v; break;
+            case 59: out.instagram = v; break;
+            case 60: out.tiktok = v; break;
+            case 61: out.custom = v; break;
+        }
+    }
+
+    co_return Ok(std::move(out));
 }
 
 }
