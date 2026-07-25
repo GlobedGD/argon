@@ -6,6 +6,7 @@
 #endif
 #include <Geode/loader/Mod.hpp>
 #include <asp/iter.hpp>
+#include "external/ServerAPIEvents.hpp"
 
 using namespace arc;
 
@@ -52,17 +53,17 @@ g_urlOffset;
 static_assert(g_urlOffset.valid, "Unsupported GD version");
 
 std::string getBaseServerUrl() {
-    // TODO: server api stuff
-    // if (Loader::get()->isModLoaded("km7dev.server_api")) {
-    //     auto url = ServerAPIEvents::getCurrentServer().url;
-    //     if (!url.empty() && url != "NONE_REGISTERED") {
-    //         while (url.ends_with('/')) {
-    //             url.pop_back();
-    //         }
+    if (Loader::get()->isModLoaded("km7dev.server_api")) {
+        auto url = ServerAPIEvents::getCurrentServer().url;
+        if (!url.empty() && url != "NONE_REGISTERED") {
+            while (url.ends_with('/')) {
+                url.pop_back();
+            }
 
-    //         return url;
-    //     }
-    // }
+            log::info("Using GDPS url: {}", url);
+            return url;
+        }
+    }
 
     // This was taken from the impostor mod :) and altered
 
@@ -71,6 +72,7 @@ std::string getBaseServerUrl() {
 
     std::string ret = g_urlOffset.addr(isAmazonStore);
 
+    // 34 chars: https://www.boomlings.com/database
     if(ret.size() > 34) ret = ret.substr(0, 34);
 
     while (ret.ends_with('/')) {

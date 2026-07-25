@@ -1,3 +1,7 @@
+# 1.5.1
+
+* Add support for GDPS switcher / Server API mod, Argon will now correctly use GDPS endpoints when connected to a GDPS via these mods
+
 # 1.5.0
 
 * Add support for account verification through the "Custom" profile field, as a fallback if message verification fails. This was added primarily because RobTop recently made comment bans affect messages too, causing comment banned users to be unable to obtain an Argon token.
