@@ -8,7 +8,7 @@
     },
     "id": "dankmeme.argon",
     "name": "Argon",
-    "version": "v2.0.0",
+    "version": "v2.0.0-alpha.1",
     "developer": "dankmeme",
     "description": "Modern authentication API for Geometry Dash",
     "dependencies": {},
