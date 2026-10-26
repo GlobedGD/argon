@@ -227,7 +227,7 @@ AuthFuture startAuth(AuthOptions options) {
     // use cached token if possible
     if (auto token = ArgonStorage::get().getAccessToken(serverUrl, account)) {
         log::debug("Using cached access token for account {}", account.username);
-        co_return Ok(std::move(*token));
+        co_return Ok(std::move(token->token));
     }
 
     web::Client client {account, serverUrl, options.requestedMod, options._danger_certVerification};
@@ -235,7 +235,7 @@ AuthFuture startAuth(AuthOptions options) {
     // no access token, try refreshing if a refresh token exists
     if (auto token = ArgonStorage::get().getRefreshToken(serverUrl, account)) {
         log::debug("Using cached refresh token for account {}", account.username);
-        client.m_refreshToken = std::move(*token);
+        client.m_refreshToken = std::move(token->token);
 
         auto refreshResult = co_await tryRefresh(client);
         if (refreshResult) {

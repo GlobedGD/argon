@@ -12,14 +12,6 @@ static auto g_storagePath = Mod::get()->getSaveDir() / ".data.bin";
 
 namespace argon {
 
-static bool expired(uint64_t expiry) {
-    uint64_t now = asp::SystemTime::now().to_time_t();
-
-    if (expiry < 30) return true;
-
-    return now >= (expiry - 30); // 30s buffer
-}
-
 static bool mismatch(const AccountData& account, const AccountEntry& entry) {
     return account.accountId != entry.accountId || account.userId != entry.userId || account.username != entry.username;
 }
@@ -30,7 +22,7 @@ ArgonStorage::ArgonStorage() {
     }
 }
 
-std::optional<std::string> ArgonStorage::getAccessToken(std::string_view serverUrl, const AccountData& account) {
+std::optional<Token> ArgonStorage::getAccessToken(std::string_view serverUrl, const AccountData& account) {
     auto data = m_data.lock();
     auto it = data->servers.find(serverUrl);
     if (it == data->servers.end()) {
@@ -44,15 +36,16 @@ std::optional<std::string> ArgonStorage::getAccessToken(std::string_view serverU
     }
 
     auto& accEntry = accIt->second;
-    if (expired(accEntry.accessTokenExpiry) || mismatch(account, accEntry)) {
+    auto token = accEntry.getAccessToken();
+    if (mismatch(account, accEntry) || token.expired()) {
         log::debug("not fetching access token because it expired or data is mismatched!");
         return std::nullopt;
     }
 
-    return accEntry.accessToken;
+    return token;
 }
 
-std::optional<std::string> ArgonStorage::getRefreshToken(std::string_view serverUrl, const AccountData& account) {
+std::optional<Token> ArgonStorage::getRefreshToken(std::string_view serverUrl, const AccountData& account) {
     auto data = m_data.lock();
     auto it = data->servers.find(serverUrl);
     if (it == data->servers.end()) {
@@ -66,12 +59,13 @@ std::optional<std::string> ArgonStorage::getRefreshToken(std::string_view server
     }
 
     auto& accEntry = accIt->second;
-    if (expired(accEntry.refreshTokenExpiry) || mismatch(account, accEntry)) {
+    auto token = accEntry.getRefreshToken();
+    if (mismatch(account, accEntry) || token.expired()) {
         log::debug("not fetching refresh token because it expired or data is mismatched!");
         return std::nullopt;
     }
 
-    return accEntry.refreshToken;
+    return token;
 }
 
 void ArgonStorage::storeRefreshToken(std::string_view serverUrl, const AccountData& account, std::string refreshToken, uint64_t expiry) {

@@ -7,6 +7,16 @@
 
 namespace argon {
 
+struct Token {
+    std::string token;
+    asp::SystemTime expiry;
+
+    bool expired() {
+        // 30s buffer
+        return expiry.until() < asp::Duration::fromSecs(30);
+    }
+};
+
 struct AccountEntry {
     int32_t accountId;
     int32_t userId;
@@ -15,6 +25,20 @@ struct AccountEntry {
     uint64_t refreshTokenExpiry;
     std::string accessToken;
     uint64_t accessTokenExpiry;
+
+    Token getRefreshToken() const {
+        return Token{
+            .token = refreshToken,
+            .expiry = asp::SystemTime::fromUnix(refreshTokenExpiry),
+        };
+    }
+
+    Token getAccessToken() const {
+        return Token{
+            .token = accessToken,
+            .expiry = asp::SystemTime::fromUnix(accessTokenExpiry),
+        };
+    }
 };
 
 struct StorageData {
@@ -30,8 +54,8 @@ class ArgonStorage : public SingletonBase<ArgonStorage> {
     ArgonStorage();
 
 public:
-    std::optional<std::string> getAccessToken(std::string_view serverUrl, const AccountData& account);
-    std::optional<std::string> getRefreshToken(std::string_view serverUrl, const AccountData& account);
+    std::optional<Token> getAccessToken(std::string_view serverUrl, const AccountData& account);
+    std::optional<Token> getRefreshToken(std::string_view serverUrl, const AccountData& account);
 
     void storeRefreshToken(std::string_view serverUrl, const AccountData& account, std::string refreshToken, uint64_t expiry);
     void storeAccessToken(std::string_view serverUrl, const AccountData& account, std::string accessToken, uint64_t expiry);
