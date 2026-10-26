@@ -1,19 +1,22 @@
-#include "ArgonState.hpp"
-#include "WebData.hpp"
 #include "Web.hpp"
 #ifdef GEODE_IS_ANDROID
 #include <Geode/binding/GJMoreGamesLayer.hpp>
 #endif
 #include <Geode/loader/Mod.hpp>
 #include <asp/iter.hpp>
-#include "external/ServerAPIEvents.hpp"
+#include "external/sha1.hpp"
+
+// TODO: wait for the lib to be ported
+#if 0
+# include "external/ServerAPIEvents.hpp"
+#endif
 
 using namespace arc;
 
 namespace argon::web {
 // TODO: reverse engineer the "encryption" and replace this all with geode base64
 
-static std::string base64Encode(const gd::string& data) {
+static std::string base64Encode(const std::string& data) {
     // trust me i did not want to use this but oh well
     std::string ret = cocos2d::ZipUtils::base64URLEncode(data);
     ret.resize(strlen(ret.c_str()));
@@ -21,7 +24,7 @@ static std::string base64Encode(const gd::string& data) {
     return ret;
 }
 
-static std::string base64EncodeEnc(const gd::string& data, gd::string key) {
+static std::string base64EncodeEnc(const std::string& data, std::string key) {
     std::string ret = ZipUtils::base64EncodeEnc(data, key);
     ret.resize(strlen(ret.c_str()));
 
@@ -42,7 +45,7 @@ struct Offset {
 // The addresses are pointing to "https://www.boomlings.com/database/getGJLevels21.php"
 // in the main game executable
 static constexpr
-    GEODE_WINDOWS  (Offset<22081, 0x558b70, 0x0>)
+    GEODE_WINDOWS  (Offset<22091, 0x757cd8, 0x0>)
     GEODE_ARM_MAC  (Offset<22081, 0x77d709, 0x0>)
     GEODE_INTEL_MAC(Offset<22081, 0x868df0, 0x0>)
     GEODE_ANDROID64(Offset<22081, 0xeccf90, 0x0>)
@@ -53,27 +56,27 @@ g_urlOffset;
 static_assert(g_urlOffset.valid, "Unsupported GD version");
 
 std::string getBaseServerUrl() {
-    if (Loader::get()->isModLoaded("km7dev.server_api")) {
-        auto url = ServerAPIEvents::getCurrentServer().url;
-        if (!url.empty() && url != "NONE_REGISTERED") {
-            while (url.ends_with('/')) {
-                url.pop_back();
-            }
+    // if (Loader::get()->isModLoaded("km7dev.server_api")) {
+    //     auto url = ServerAPIEvents::getCurrentServer().url;
+    //     if (!url.empty() && url != "NONE_REGISTERED") {
+    //         while (url.ends_with('/')) {
+    //             url.pop_back();
+    //         }
 
-            log::info("Using GDPS url: {}", url);
-            return url;
-        }
-    }
+    //         log::info("Using GDPS url: {}", url);
+    //         return url;
+    //     }
+    // }
 
-    // This was taken from the impostor mod :) and altered
-
-    bool isAmazonStore = false
-        GEODE_ANDROID(|| !((GJMoreGamesLayer* volatile)nullptr)->getMoreGamesList()->count() );
+    // TODO: amazon is irrelevant now?
+    // bool isAmazonStore = false
+    //     GEODE_ANDROID(|| !((GJMoreGamesLayer* volatile)nullptr)->getMoreGamesList()->count() );
+    bool isAmazonStore = false;
 
     std::string ret = g_urlOffset.addr(isAmazonStore);
 
     // 34 chars: https://www.boomlings.com/database
-    if(ret.size() > 34) ret = ret.substr(0, 34);
+    if (ret.size() > 34) ret = ret.substr(0, 34);
 
     while (ret.ends_with('/')) {
         ret.pop_back();
@@ -108,156 +111,79 @@ static const char* platformString() {
 }
 
 
-static std::string getUserAgent() {
+std::string Client::getUserAgent() {
     return fmt::format("argon/v{} ({}, Geode {}, GD {})",
-            ARGON_VERSION,
+            Mod::get()->getVersion(),
             platformString(),
             Loader::get()->getVersion(),
             Loader::get()->getGameVersion());
 }
 
-static std::string getReqMod() {
-    auto mod = Mod::get();
+static std::string formatReqMod(Mod* mod) {
+    if (!mod) return "unknown";
     return fmt::format("{}/{}", mod->getID(), mod->getVersion().toVString());
 }
-
-static WebRequest baseRequest() {
-    auto& argon = ArgonState::get();
-    return WebRequest()
-        .userAgent(getUserAgent())
-        .certVerification(argon.getCertVerification())
-        .timeout(std::chrono::seconds(10));
-}
-
-static WebRequest baseGDRequest() {
-    auto& argon = ArgonState::get();
-    return WebRequest()
-        .userAgent("")
-        .certVerification(argon.getCertVerification())
-        .timeout(std::chrono::seconds(20));
-}
-
-struct Form {
-    StringBuffer<> buf;
-
-    Form& param(std::string_view key, std::string_view value) {
-        if (buf.size() > 0) {
-            buf.append('&');
-        }
-
-        buf.append(key);
-        buf.append('=');
-        buf.append(value);
-        return *this;
-    }
-
-    template <std::integral T>
-    Form& param(std::string_view key, T value) {
-        return param(key, fmt::to_string(value));
-    }
-
-    std::string str() {
-        return buf.str();
-    }
-};
 
 Result<WebResponse> wrapResponse(std::string_view what, WebResponse response) {
     if (response.ok()) return Ok(std::move(response));
     return Err(wrapError(response, what));
 }
 
-Future<Result<Stage1ResponseData>> startChallenge(const AccountData& account, std::string_view preferredMethod, bool forceStrong) {
-    auto& argon = ArgonState::get();
+struct LoginPayload {
+    int account_id;
+    std::string requesting_mod;
+    std::vector<ChallengeType> supported_challenges;
+};
 
-    auto payload = matjson::makeObject({
-        {"accountId", account.accountId},
-        {"userId", account.userId},
-        {"username", account.username},
-        {"forceStrong", forceStrong},
-        {"reqMod", getReqMod()},
-        {"preferred", preferredMethod}
-    });
+Future<ArgonApiResult<ChallengeResponse>> Client::sendLogin(std::span<const ChallengeType> supported) {
+    LoginPayload payload {
+        m_account.accountId,
+        formatReqMod(m_reqMod),
+        std::vector<ChallengeType>{supported.begin(), supported.end()}
+    };
 
-    auto url = argon.makeUrl("v1/challenge/start");
-    log::debug("(Argon) requesting challenge with url: {}", url);
-
-    auto response = co_await baseRequest()
-        .bodyJSON(payload)
-        .post(std::move(url));
-
-    ARC_CO_UNWRAP_INTO(response, wrapResponse("challenge start", std::move(response)));
-    co_return extractData<Stage1ResponseData>(response);
+    co_return co_await this->sendArgonRequest<ChallengeResponse>(payload, "v2/account/login");
 }
 
-static Future<VerifyResult> verifyChallengeInner(const AccountData& account, uint32_t challengeId, std::string_view solution, std::string path) {
-    auto& argon = ArgonState::get();
+struct VerifyPayload {
+    uint32_t challenge_id;
+    int32_t account_id;
+    uint32_t answer;
+};
 
-    auto payload = matjson::makeObject({
-        {"challengeId", challengeId},
-        {"accountId", account.accountId},
-        {"solution", solution}
-    });
+Future<ArgonApiResult<VerifyResponse>> Client::sendVerify(uint32_t challengeId, uint32_t answer) {
+    VerifyPayload payload { challengeId, m_account.accountId, answer };
 
-    auto response = co_await baseRequest()
-        .bodyJSON(payload)
-        .post(argon.makeUrl(path));
-    ARC_CO_UNWRAP_INTO(response, wrapResponse("challenge verify", std::move(response)));
-    ARC_CO_UNWRAP_INTO(auto data, extractData<matjson::Value>(response));
+    co_return co_await this->sendArgonRequest<VerifyResponse>(payload, "v2/account/verify");
+}
 
-    bool verified = data["verified"].asBool().unwrapOr(false);
-    if (verified) {
-        auto authtoken = data["authtoken"].asString().unwrapOrDefault();
-        if (authtoken.empty()) {
-            co_return Err("Malformed server response (missing auth token)");
-        }
+Future<ArgonApiResult<RefreshResponse>> Client::sendRefresh() {
+    return this->sendArgonRequest<RefreshResponse>(std::monostate{}, "v2/account/refresh");
+}
 
-        int comment = data["commentId"].asInt().unwrapOrDefault();
-        co_return Ok(SuccessfulVerification {
-            .authtoken = std::move(authtoken),
-            .commentId = comment
-        });
+Future<utils::web::WebResponse> Client::sendGDRequest(
+    std::optional<Form> payload,
+    std::string_view suffix
+) {
+    auto req = WebRequest()
+        .userAgent("")
+        .certVerification(m_certVerification)
+        .timeout(std::chrono::seconds(10));
+
+    if (payload) {
+        req.bodyString(payload->str());
+        req.header("Content-Type", "application/x-www-form-urlencoded");
     }
 
-    auto pollAfter = data["pollAfter"].asInt().unwrapOr(1000);
-    co_return Ok(PollLater(pollAfter));
+    std::string url = fmt::format("{}/{}", m_account.serverUrl, suffix);
+    co_return co_await req.post(std::move(url));
 }
 
-Future<VerifyResult> verifyChallenge(const AccountData& account, uint32_t challengeId, std::string_view solution) {
-    return verifyChallengeInner(account, challengeId, solution, "v1/challenge/verify");
-}
-
-Future<VerifyResult> verifyChallengePoll(const AccountData& account, uint32_t challengeId, std::string_view solution) {
-    return verifyChallengeInner(account, challengeId, solution, "v1/challenge/verifypoll");
-}
-
-Future<Result<>> submitGDMessage(const AccountData& account, int target, std::string_view message) {
-    auto response = co_await baseGDRequest()
-        .bodyString(Form{}
-            .param("accountID", account.accountId)
-            .param("gjp2", account.gjp2)
-            .param("gameVersion", "22")
-            .param("binaryVersion", "45")
-            .param("secret", "Wmfd2893gb7")
-            .param("toAccountID", target)
-            .param("subject", base64Encode(gd::string{message.data(), message.size()}))
-            .param("body", base64EncodeEnc("This is a message sent to verify your account, it can be safely deleted.", "14251"))
-            .str())
-        .post(fmt::format("{}/uploadGJMessage20.php", account.serverUrl));
-    ARC_CO_UNWRAP_INTO(response, wrapResponse("GD message", std::move(response)));
-
-    auto res = response.string().unwrapOrDefault();
-    if (res.empty() || res == "-1") {
-        co_return Err(wrapError(response, "GD message"));
-    }
-
-    co_return Ok();
-}
-
-Future<Result<>> submitGDUpdateProfile(const AccountData& account, UpdateProfilePayload payload) {
-    auto response = co_await baseGDRequest()
-        .bodyString(Form{}
-            .param("accountID", account.accountId)
-            .param("gjp2", account.gjp2)
+Future<Result<>> Client::sendGDUpdateProfile(UpdateProfilePayload payload) {
+    auto response = co_await this->sendGDRequest(
+        Form{}
+            .param("accountID", m_account.accountId)
+            .param("gjp2", m_account.gjp2)
             .param("gameVersion", "22")
             .param("binaryVersion", "45")
             .param("secret", "Wmfv3899gc9")
@@ -270,129 +196,63 @@ Future<Result<>> submitGDUpdateProfile(const AccountData& account, UpdateProfile
             .param("instagram", payload.instagram)
             .param("tiktok", payload.tiktok)
             .param("discord", payload.discord)
-            .param("custom", payload.custom)
-            .str())
-        .post(fmt::format("{}/updateGJAccSettings20.php", account.serverUrl));
-    ARC_CO_UNWRAP_INTO(response, wrapResponse("GD update account", std::move(response)));
+            .param("custom", payload.custom),
+        "updateGJAccSettings20.php"
+    );
 
-    auto res = response.string().unwrapOrDefault();
-    if (res.empty() || res == "-1") {
+    ARC_CO_UNWRAP_INTO(response, wrapResponse("GD update account", std::move(response)));
+    auto str = response.string().unwrapOrDefault();
+    if (str.empty() || str == "-1") {
         co_return Err(wrapError(response, "GD update account"));
     }
 
     co_return Ok();
 }
 
-Future<Result<>> deleteGDMessage(const AccountData& account, int id) {
-    // delete the message
-    auto response = co_await baseGDRequest()
-        .bodyString(Form{}
-            .param("accountID", account.accountId)
-            .param("gjp2", account.gjp2)
-            .param("gameVersion", "22")
-            .param("binaryVersion", "45")
-            .param("secret", "Wmfd2893gb7")
-            .param("isSender", 1)
-            .param("messageID", id)
-            .str())
-        .post(fmt::format("{}/deleteGJMessages20.php", account.serverUrl));
-
-    ARC_CO_UNWRAP_INTO(response, wrapResponse("delete GD message", std::move(response)));
-
-    co_return Ok();
+static std::string commentChk(std::string_view username, std::string_view comment, int levelId, int percent, int type) {
+    auto input = fmt::format("{}{}{}{}{}{}", username, comment, levelId, percent, type, "xPT6iUrtws0J");
+    SHA1 s{};
+    s.update(input);
+    auto hex = s.final();
+    auto chk = base64EncodeEnc(hex, "29481");
+    return chk;
 }
 
-Future<Result<>> submitGDComment(const AccountData& account, int target, std::string_view message) {
-    co_return Err("Comment auth not yet implemented");
-}
-
-Future<Result<>> checkGDMessageLimit(const AccountData& account) {
-    auto response = co_await baseGDRequest()
-        .bodyString(Form{}
-            .param("accountID", account.accountId)
-            .param("gjp2", account.gjp2)
+Future<Result<>> Client::sendGDSubmitComment(int32_t levelId, std::string content) {
+    auto comment = base64Encode(content);
+    auto response = co_await this->sendGDRequest(
+        Form{}
+            .param("accountID", m_account.accountId)
+            .param("gjp2", m_account.gjp2)
+            .param("userName", m_account.username)
+            .param("secret", "Wmfd2893gb7")
+            .param("levelID", levelId)
+            .param("chk", commentChk(m_account.username, comment, levelId, 0, 0))
             .param("gameVersion", "22")
             .param("binaryVersion", "45")
-            .param("secret", "Wmfd2893gb7")
-            .param("count", 50)
-            .param("page", 7)
-            .param("getSent", 1)
-            .str())
-        .post(fmt::format("{}/getGJMessages20.php", account.serverUrl));
+            .param("comment", comment),
+        "uploadGJComment21.php"
+    );
 
-    ARC_CO_UNWRAP_INTO(response, wrapResponse("fetch GD messages", std::move(response)));
+    ARC_CO_UNWRAP_INTO(response, wrapResponse("GD submit comment", std::move(response)));
     auto str = response.string().unwrapOrDefault();
-    if (str.empty()) {
-        co_return Err(wrapError(response, "fetch GD messages"));
-    }
-
-    if (str == "-1") {
-        co_return Err("Invalid account credentials, please try to Refresh Login in account settings");
-    }
-
-    size_t msgCount = 0;
-    if (str != "-2") {
-        msgCount = asp::iter::split(str, '|').count();
-    }
-
-    if (msgCount == 50) {
-        co_return Err("Sent message limit reached, please open your GD profile, go to the Sent Messages tab (not received), delete some messages and try again.");
+    if (str.empty() || str == "-1") {
+        co_return Err(wrapError(response, "GD submit comment"));
     }
 
     co_return Ok();
 }
 
-Future<Result<>> checkGDUserNotBlocked(const AccountData& account, int targetUser) {
-    auto response = co_await baseGDRequest()
-        .bodyString(Form{}
-            .param("accountID", account.accountId)
-            .param("gjp2", account.gjp2)
+Future<Result<web::UpdateProfilePayload>> Client::getGDCurrentProfileData() {
+    auto response = co_await this->sendGDRequest(
+        Form{}
+            .param("targetAccountID", m_account.accountId)
             .param("gameVersion", "22")
             .param("binaryVersion", "45")
             .param("secret", "Wmfd2893gb7")
-            .param("type", 1)
-            .param("dvs", 3)
-            .str())
-        .post(fmt::format("{}/getGJUserList20.php", account.serverUrl));
-
-    ARC_CO_UNWRAP_INTO(response, wrapResponse("fetch GD blocklist", std::move(response)));
-    auto str = response.string().unwrapOrDefault();
-    if (str.empty()) {
-        co_return Err(wrapError(response, "fetch GD messages"));
-    }
-
-    if (str == "-1") {
-        co_return Err("Invalid account credentials, please try to Refresh Login in account settings");
-    } else if (str == "-2") {
-        co_return Ok();
-    } else if (str.starts_with("-")) {
-        co_return Err("Unexpected server response while fetching blocklist: {}", str);
-    }
-
-    std::string targetStr = fmt::to_string(targetUser);
-
-    for (auto user : asp::iter::split(str, "|")) {
-        for (auto [k, v] : asp::iter::split(user, ':').arrayChunks<2>()) {
-            if (k == "16" && v == targetStr) {
-                co_return Err("You have blocked the authentication bot account, please unblock it and try again");
-            }
-        }
-    }
-
-    co_return Ok();
-}
-
-
-Future<Result<web::UpdateProfilePayload>> getCurrentProfileData(const AccountData& account) {
-    auto response = co_await baseGDRequest()
-        .bodyString(Form{}
-            .param("targetAccountID", account.accountId)
-            .param("gameVersion", "22")
-            .param("binaryVersion", "45")
-            .param("secret", "Wmfd2893gb7")
-            .param("dvs", 3)
-            .str())
-        .post(fmt::format("{}/getGJUserInfo20.php", account.serverUrl));
+            .param("dvs", 3),
+        "getGJUserInfo20.php"
+    );
 
     ARC_CO_UNWRAP_INTO(response, wrapResponse("fetch GD profile", std::move(response)));
     auto str = response.string().unwrapOrDefault();

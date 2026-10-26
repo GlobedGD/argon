@@ -1,0 +1,16 @@
+{
+    "geode": "5.11.2",
+    "gd": {
+        "win": "2.2091",
+        "android": "2.2081",
+        "mac": "2.2081",
+        "ios": "2.2081"
+    },
+    "id": "dankmeme.argon",
+    "name": "Argon",
+    "version": "v2.0.0",
+    "developer": "dankmeme",
+    "description": "Modern authentication API for Geometry Dash",
+    "dependencies": {},
+    "settings": {}
+}

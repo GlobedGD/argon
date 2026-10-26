@@ -1,5 +1,5 @@
 #include "ArgonStorage.hpp"
-#include "ArgonState.hpp"
+#include "Crypto.hpp"
 
 #include <Geode/loader/Dirs.hpp>
 #include <Geode/utils/file.hpp>
@@ -8,193 +8,171 @@
 
 using namespace geode::prelude;
 
-static auto storagePath = geode::dirs::getModsSaveDir() / ".dankmeme.argon-data.json";
+static auto g_storagePath = Mod::get()->getSaveDir() / ".data.bin";
 
 namespace argon {
 
-ArgonStorage::ArgonStorage() {}
+static bool expired(uint64_t expiry) {
+    uint64_t now = asp::SystemTime::now().to_time_t();
 
-static matjson::Value makeNewConfigFile() {
-    return matjson::makeObject({
-        {"_ver", 0},
-        {"tokens", matjson::Value::array()},
-    });
+    if (expiry < 30) return true;
+
+    return now >= (expiry - 30); // 30s buffer
 }
 
-static Result<matjson::Value> parseConfigFile(const std::string& data) {
-    matjson::Value out;
-
-    auto res = matjson::parse(data);
-    if (!res) {
-        return Err("parse error: {}", res.unwrapErr());
-    }
-
-    out = std::move(res).unwrap();
-
-    // validation
-    if (
-        !out["_ver"].isNumber()
-        || !out["tokens"].isArray()
-    ) {
-        return Err("invalid structure");
-    }
-
-    return Ok(std::move(out));
+static bool mismatch(const AccountData& account, const AccountEntry& entry) {
+    return account.accountId != entry.accountId || account.userId != entry.userId || account.username != entry.username;
 }
 
-static matjson::Value loadOrCreateConfig() {
-    matjson::Value data;
-
-    if (asp::fs::isFile(storagePath)) {
-        auto res = geode::utils::file::readString(storagePath);
-        if (!res) {
-            log::warn("(Argon) failed to read argon data file: {}", res.unwrapErr());
-            data = makeNewConfigFile();
-        } else {
-            auto res2 = parseConfigFile(res.unwrap());
-            if (!res2) {
-                log::warn("(Argon) failed to read config file, resetting: {}", res2.unwrapErr());
-                data = makeNewConfigFile();
-            } else {
-                data = std::move(res2).unwrap();
-            }
-        }
-    } else {
-        data = makeNewConfigFile();
+ArgonStorage::ArgonStorage() {
+    if (auto err = this->load().err()) {
+        log::warn("Failed to load storage: {}", *err);
     }
-
-    data["_ver"] = data["_ver"].asUInt().unwrapOr(0) + 1;
-
-    return data;
 }
 
-Result<> ArgonStorage::storeAuthToken(const AccountData& account, std::string_view serverIdent, std::string_view authtoken) {
-    auto _lock = ArgonState::get().acquireConfigLock();
-
-    auto data = loadOrCreateConfig();
-
-    // find if theres any token that has the same data, replace it instead of adding a new entry
-    bool insertedToken = false;
-
-    // parseConfigFile already verified for us that data["tokens"] will be valid
-    auto& arr = data["tokens"].asArray().unwrap();
-
-    auto serverUrl = ArgonState::get().getServerUrl();
-
-    for (auto& value : arr) {
-        std::string url = value["url"].asString().unwrapOrDefault();
-        int accountId = value["accid"].asInt().unwrapOrDefault();
-        int userId = value["userid"].asInt().unwrapOrDefault();
-
-        if (url != serverUrl
-            || accountId != account.accountId
-            || userId != account.userId
-        ) {
-            continue;
-        }
-
-        // if the same url and account ID, this leaves ident, username and the token fields to be arbitrary
-        // and indeed, we will ignore their current values and just replace them
-        value["name"] = account.username;
-        value["ident"] = serverIdent;
-        value["token"] = authtoken;
-
-        insertedToken = true;
-        break;
+std::optional<std::string> ArgonStorage::getAccessToken(std::string_view serverUrl, const AccountData& account) {
+    auto data = m_data.lock();
+    auto it = data->servers.find(serverUrl);
+    if (it == data->servers.end()) {
+        return std::nullopt;
     }
 
-    if (!insertedToken) {
-        arr.push_back(matjson::makeObject({
-            {"url", serverUrl},
-            {"accid", account.accountId},
-            {"userid", account.userId},
-            {"name", account.username},
-            {"ident", serverIdent},
-            {"token", authtoken},
-        }));
+    auto& serverData = it->second;
+    auto accIt = serverData.accounts.find(account.accountId);
+    if (accIt == serverData.accounts.end()) {
+        return std::nullopt;
     }
 
-    auto res = geode::utils::file::writeToJson(storagePath, data);
-    if (!res) {
-        return Err(fmt::format("failed to save argon data file: {}", res.unwrapErr()));
+    auto& accEntry = accIt->second;
+    if (expired(accEntry.accessTokenExpiry) || mismatch(account, accEntry)) {
+        log::debug("not fetching access token because it expired or data is mismatched!");
+        return std::nullopt;
     }
 
-    return Ok();
+    return accEntry.accessToken;
 }
 
-std::optional<std::string> ArgonStorage::getAuthToken(const AccountData& account, std::string_view serverUrl) {
-    auto _lock = ArgonState::get().acquireConfigLock();
-
-    auto data = loadOrCreateConfig();
-
-    // parseConfigFile already verified for us that data["tokens"] will be valid
-    auto& arr = data["tokens"].asArray().unwrap();
-
-    for (auto& value : arr) {
-        int accountId = value["accid"].asInt().unwrapOrDefault();
-        int userId = value["userid"].asInt().unwrapOrDefault();
-
-        if (accountId != account.accountId || userId != account.userId) {
-            continue;
-        }
-
-        std::string url = value["url"].asString().unwrapOrDefault();
-
-        if (url != serverUrl) {
-            continue;
-        }
-
-        std::string username = value["name"].asString().unwrapOrDefault();
-
-        if (username != account.username) {
-            continue;
-        }
-
-        // std::string ident = value["ident"].asString().unwrapOrDefault();
-        std::string token = value["token"].asString().unwrapOrDefault();
-
-        return std::make_optional(std::move(token));
+std::optional<std::string> ArgonStorage::getRefreshToken(std::string_view serverUrl, const AccountData& account) {
+    auto data = m_data.lock();
+    auto it = data->servers.find(serverUrl);
+    if (it == data->servers.end()) {
+        return std::nullopt;
     }
 
-    return std::nullopt;
-}
-
-bool ArgonStorage::hasAuthToken(const AccountData& account, std::string_view serverUrl) {
-    return this->getAuthToken(account, serverUrl).has_value();
-}
-
-void ArgonStorage::clearTokens(int accountId) {
-    auto _lock = ArgonState::get().acquireConfigLock();
-
-    auto data = loadOrCreateConfig();
-
-    // parseConfigFile already verified for us that data["tokens"] will be valid
-    auto& arr = data["tokens"].asArray().unwrap();
-
-    for (int i = arr.size() - 1; i >= 0; i--) {
-        auto& val = arr[i];
-
-        if (val["accid"].asInt().unwrapOrDefault() == accountId) {
-            arr.erase(arr.begin() + i);
-        }
+    auto& serverData = it->second;
+    auto accIt = serverData.accounts.find(account.accountId);
+    if (accIt == serverData.accounts.end()) {
+        return std::nullopt;
     }
 
-    auto res = geode::utils::file::writeToJson(storagePath, data);
-    if (!res) {
-        log::warn("(Argon) failed to save argon data file: {}", res.unwrapErr());
+    auto& accEntry = accIt->second;
+    if (expired(accEntry.refreshTokenExpiry) || mismatch(account, accEntry)) {
+        log::debug("not fetching refresh token because it expired or data is mismatched!");
+        return std::nullopt;
+    }
+
+    return accEntry.refreshToken;
+}
+
+void ArgonStorage::storeRefreshToken(std::string_view serverUrl, const AccountData& account, std::string refreshToken, uint64_t expiry) {
+    auto data = m_data.lock();
+    auto& serverData = this->serverData(data, serverUrl);
+    auto& accEntry = serverData.accounts[account.accountId];
+
+    accEntry.accountId = account.accountId;
+    accEntry.userId = account.userId;
+    accEntry.username = account.username;
+    accEntry.refreshToken = std::move(refreshToken);
+    accEntry.refreshTokenExpiry = expiry;
+
+    if (auto err = this->save().err()) {
+        log::warn("Failed to save storage: {}", *err);
+    }
+}
+
+void ArgonStorage::storeAccessToken(std::string_view serverUrl, const AccountData& account, std::string accessToken, uint64_t expiry) {
+    auto data = m_data.lock();
+    auto& serverData = this->serverData(data, serverUrl);
+    auto& accEntry = serverData.accounts[account.accountId];
+
+    accEntry.accountId = account.accountId;
+    accEntry.userId = account.userId;
+    accEntry.username = account.username;
+    accEntry.accessToken = std::move(accessToken);
+    accEntry.accessTokenExpiry = expiry;
+
+    if (auto err = this->save().err()) {
+        log::warn("Failed to save storage: {}", *err);
     }
 }
 
 void ArgonStorage::clearAllTokens() {
-    auto _lock = ArgonState::get().acquireConfigLock();
+    m_data.lock()->servers.clear();
 
-    auto data = loadOrCreateConfig();
-    data["tokens"] = matjson::Value::array();
-
-    auto res = geode::utils::file::writeToJson(storagePath, data);
-    if (!res) {
-        log::warn("(Argon) failed to save argon data file: {}", res.unwrapErr());
+    if (auto err = this->save().err()) {
+        log::warn("Failed to save storage: {}", *err);
     }
+}
+
+void ArgonStorage::clearTokens(int accountId) {
+    auto data = m_data.lock();
+    for (auto& [_, serverData] : data->servers) {
+        serverData.accounts.erase(accountId);
+    }
+
+    if (auto err = this->save().err()) {
+        log::warn("Failed to save storage: {}", *err);
+    }
+}
+
+bool ArgonStorage::hasToken(const AccountData& account, std::string_view serverUrl) {
+    return this->getAccessToken(serverUrl, account).has_value();
+}
+
+StorageData::ServerData& ArgonStorage::serverData(decltype(m_data)::Guard& guard, std::string_view serverUrl) {
+    auto it = guard->servers.find(serverUrl);
+    if (it == guard->servers.end()) {
+        auto [newIt, _] = guard->servers.emplace(serverUrl, StorageData::ServerData{});
+        return newIt->second;
+    }
+    return it->second;
+}
+
+Result<> ArgonStorage::load() {
+    auto result = asp::fs::read(g_storagePath);
+    if (!result && result.unwrapErr() == asp::fs::ErrorKind::NotFound) {
+        return Ok();
+    }
+
+    auto data = GEODE_UNWRAP(result);
+    auto key = createKey();
+    auto plaintext = GEODE_UNWRAP(decrypt(data, key));
+
+    auto jsonResult = glz::read_json<StorageData>(plaintext);
+    if (!jsonResult) {
+        return Err("Failed to parse storage data: {}", jsonResult.error().custom_error_message);
+    }
+
+    *m_data.lock() = std::move(jsonResult).value();
+
+    return Ok();
+}
+
+Result<> ArgonStorage::save() {
+    auto key = createKey();
+
+    std::vector<uint8_t> buffer;
+    if (glz::write_json(*m_data.lock(), buffer)) {
+        return Err("failed to write json");
+    }
+
+    auto ciphertext = encrypt(buffer, key);
+    auto result = asp::fs::write(g_storagePath, ciphertext);
+    if (!result) {
+        return Err("Failed to write storage data: {}", result.unwrapErr());
+    }
+
+    return Ok();
 }
 
 } // namespace argon

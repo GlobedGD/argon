@@ -6,12 +6,10 @@ Benefits compared to some of the other auth APIs (Globed, DashAuth, GDAuth):
 
 * Does not send your GJP or password to any 3rd party server
 * Tokens are stored globally, meaning that authentication is done only once even if the user has multiple mods installed that use Argon
-* Integrated in your mod, user does not need to install any dependencies
 * Smooth UX for switching accounts (will not try to use or overwrite the token of the other account)
 * Our official instance is whitelisted by RobTop, which means authentication is faster and more reliable against IP blocks
-* Challenges don't entirely rely on the IP address, but are still secured in other ways, preventing errors if the user has a weird ISP
 * Ability to retrieve user's username without making requests to the GD server (with just their token)
-* Automatic troubleshooter for figuring out the cause of auth issues (for example invalid session or too many sent messages)
+* Automatic troubleshooter for figuring out the cause of auth issues (for example invalid session)
 
 ## Usage (client-side)
 
@@ -25,7 +23,7 @@ target_link_libraries(${PROJECT_NAME} argon)
 Auth is performed via the `argon::startAuth` function, which returns a future that resolves to a `Result<std::string>` with the user's token:
 
 ```cpp
-#include <argon/argon.hpp>
+#include <argon.hpp>
 #include <Geode/Geode.hpp>
 
 using namespace geode::prelude;
