@@ -154,7 +154,7 @@ struct VerifyPayload {
 Future<ArgonApiResult<VerifyResponse>> Client::sendVerify(uint32_t challengeId, uint32_t answer) {
     VerifyPayload payload { challengeId, m_account.accountId, answer };
 
-    co_return co_await this->sendArgonRequest<VerifyResponse>(payload, "v2/account/verify");
+    co_return co_await this->sendArgonRequest<VerifyResponse>(payload, "v2/account/login/verify");
 }
 
 Future<ArgonApiResult<RefreshResponse>> Client::sendRefresh() {
