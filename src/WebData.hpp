@@ -49,6 +49,10 @@ struct RefreshResponse {
     uint64_t access_token_valid_until;
 };
 
+struct WebTokenResponse {
+    std::string token;
+};
+
 static CowString truncate(std::string_view s, size_t maxSize = 128) {
     if (s.size() >= maxSize) {
         // genius

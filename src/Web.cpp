@@ -161,6 +161,10 @@ Future<ArgonApiResult<RefreshResponse>> Client::sendRefresh() {
     return this->sendArgonRequest<RefreshResponse>(std::monostate{}, "v2/account/refresh");
 }
 
+Future<ArgonApiResult<WebTokenResponse>> Client::sendGenerateWebToken() {
+    return this->sendArgonRequest<WebTokenResponse>(std::monostate{}, "v2/account/webtoken");
+}
+
 Future<utils::web::WebResponse> Client::sendGDRequest(
     std::optional<Form> payload,
     std::string_view suffix

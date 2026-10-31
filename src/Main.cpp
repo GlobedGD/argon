@@ -19,6 +19,20 @@ static std::optional<std::thread::id> g_mainThreadId;
 // TODO: change on release
 static const std::string_view g_officialServer = "https://argon-dev.globed.dev";
 
+static std::string getArgonServerUrl(const _overrides& overrides) {
+    if (overrides.serverUrl) {
+        return *overrides.serverUrl;
+    }
+
+    // use saved value as secondary override
+    auto customUrl = Mod::get()->getSavedValue<std::string>("custom-server-url");
+    if (!customUrl.empty()) {
+        return customUrl;
+    }
+
+    return std::string{g_officialServer};
+}
+
 std::string_view authProgressToString(AuthProgress progress) {
     switch (progress) {
         case AuthProgress::RequestedChallenge:
@@ -190,7 +204,7 @@ static void storeTokens(web::Client& client, auto& response) {
     storage.storeAccessToken(client.m_serverUrl, client.m_account, response.access_token, response.access_token_valid_until);
 }
 
-static std::string handleSuccessfulAuth(web::Client& client, SuccessfulAttempt& att) {
+static web::RefreshResponse handleSuccessfulAuth(web::Client& client, SuccessfulAttempt& att) {
     web::RefreshResponse r{
         .refresh_token = att.verif.refresh_token.value(),
         .refresh_token_valid_until = att.verif.refresh_token_valid_until.value(),
@@ -201,7 +215,7 @@ static std::string handleSuccessfulAuth(web::Client& client, SuccessfulAttempt& 
 
     // TODO: delete the comment?
 
-    return r.access_token;
+    return r;
 }
 
 static Future<Result<std::string>> tryRefresh(web::Client& client) {
@@ -210,41 +224,8 @@ static Future<Result<std::string>> tryRefresh(web::Client& client) {
     co_return Ok(response.access_token);
 }
 
-AuthFuture startAuth(AuthOptions options) {
-    if (!options.account) {
-        // no account, fetch it
-        options.account = *co_await async::waitForMainThread(getGameAccountData);
-    }
-
-    if (!options.account->valid()) {
-        co_return Err("Invalid account data");
-    }
-
-    auto& account = *options.account;
-    auto serverUrl = options.serverUrl.value_or(std::string{g_officialServer});
-    log::debug("Get for url '{}'", serverUrl);
-
-    // use cached token if possible
-    if (auto token = ArgonStorage::get().getAccessToken(serverUrl, account)) {
-        log::debug("Using cached access token for account {}", account.username);
-        co_return Ok(std::move(token->token));
-    }
-
-    web::Client client {account, serverUrl, options.requestedMod, options._danger_certVerification};
-
-    // no access token, try refreshing if a refresh token exists
-    if (auto token = ArgonStorage::get().getRefreshToken(serverUrl, account)) {
-        log::debug("Using cached refresh token for account {}", account.username);
-        client.m_refreshToken = std::move(token->token);
-
-        auto refreshResult = co_await tryRefresh(client);
-        if (refreshResult) {
-            co_return Ok(std::move(refreshResult).unwrap());
-        } else {
-            log::warn("(Argon) failed to refresh access token: {}", refreshResult.unwrapErr());
-        }
-    }
-
+static Future<Result<web::RefreshResponse>> performChallenge(web::Client& client, AuthOptions& options) {
+    auto& account = client.m_account;
     log::info(
         "Starting authentication for account {} ({}), server: '{}'",
         account.username, account.accountId, account.serverUrl
@@ -278,9 +259,9 @@ AuthFuture startAuth(AuthOptions options) {
         }
 
         auto& att = result.result.unwrap();
-        auto accessToken = handleSuccessfulAuth(client, att);
+        auto response = handleSuccessfulAuth(client, att);
 
-        co_return Ok(std::move(accessToken));
+        co_return Ok(std::move(response));
     }
 
     // if we reached here, this means all methods have failed!
@@ -293,4 +274,89 @@ AuthFuture startAuth(AuthOptions options) {
     co_return Err(out.str());
 }
 
+AuthFuture startAuth(AuthOptions options) {
+    if (!options.account) {
+        // no account, fetch it
+        options.account = *co_await async::waitForMainThread(getGameAccountData);
+    }
+
+    if (!options.account->valid()) {
+        co_return Err("Invalid account data");
+    }
+
+    auto& account = *options.account;
+    auto serverUrl = getArgonServerUrl(options._overrides);
+
+    // use cached token if possible
+    if (auto token = ArgonStorage::get().getAccessToken(serverUrl, account)) {
+        log::debug("Using cached access token for account {}", account.username);
+        co_return Ok(std::move(token->token));
+    }
+
+    web::Client client {account, serverUrl, options._overrides.requestedMod, options._overrides.certVerification};
+
+    // no access token, try refreshing if a refresh token exists
+    if (auto token = ArgonStorage::get().getRefreshToken(serverUrl, account)) {
+        log::debug("Using cached refresh token for account {}", account.username);
+        client.m_refreshToken = std::move(token->token);
+
+        auto refreshResult = co_await tryRefresh(client);
+        if (refreshResult) {
+            co_return Ok(std::move(refreshResult).unwrap());
+        } else {
+            log::warn("(Argon) failed to refresh access token: {}", refreshResult.unwrapErr());
+            ArgonStorage::get().clearTokens(account.accountId);
+        }
+    }
+
+    // perform the challenge
+    auto result = ARC_CO_UNWRAP(co_await performChallenge(client, options));
+    co_return Ok(std::move(result.access_token));
+}
+
+Future<Result<std::string>> openAccountPage(std::optional<AccountData> data, const _overrides& overrides) {
+    if (!data) data = *co_await async::waitForMainThread(getGameAccountData);
+    if (!data->valid()) {
+        co_return Err("Invalid account data");
+    }
+
+    auto serverUrl = getArgonServerUrl(overrides);
+    auto& account = *data;
+
+    web::Client client {account, serverUrl, overrides.requestedMod, overrides.certVerification};
+
+    if (auto token = ArgonStorage::get().getRefreshToken(serverUrl, account)) {
+        client.m_refreshToken = token->token;
+    } else {
+        AuthOptions opts{};
+        auto result = ARC_CO_UNWRAP(co_await performChallenge(client, opts));
+        client.m_refreshToken = std::move(result.refresh_token);
+    }
+
+    auto result = ARC_CO_UNWRAP(co_await client.sendGenerateWebToken());
+
+    auto url = fmt::format("{}/login?token={}", serverUrl, result.token);
+    utils::web::openLinkInBrowser(url);
+
+    co_return Ok(std::move(url));
+}
+
+}
+
+$on_mod(Loaded) {
+    ButtonSettingPressedEventV3(Mod::get(), "action-buttons").listen([] (auto buttonKey) {
+        if (buttonKey == "website-login") {
+            async::spawn(argon::openAccountPage(), [](auto result) {
+                if (!result) {
+                    queueInMainThread([e = std::move(result).unwrapErr()] {
+                        FLAlertLayer::create(
+                            "Argon Error",
+                            fmt::format("Failed to open account page: {}", e),
+                            "Ok"
+                        )->show();
+                    });
+                }
+            });
+        }
+    }).leak();
 }

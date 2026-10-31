@@ -3,7 +3,6 @@
 #include <Geode/Result.hpp>
 #include <Geode/utils/function.hpp>
 #include "config.hpp"
-#include "Error.hpp"
 #include <string>
 
 namespace argon {
@@ -27,6 +26,13 @@ enum class AuthProgress {
     VerifyingChallenge,
 };
 
+inline struct _overrides {
+    std::optional<std::string> serverUrl;
+    geode::Mod* requestedMod = geode::Mod::get();
+    /// Set to false to disable TLS certificate verification, only do this if you know what you are doing.
+    bool certVerification = true;
+} g_overrides;
+
 // Converts the `AuthProgress` enum to a human readable string,
 // e.g. "Requesting challenge", "Solving challenge"
 ARGON_DLL std::string_view authProgressToString(AuthProgress progress);
@@ -42,13 +48,10 @@ ARGON_DLL bool signedIn();
 using AuthProgressCallback = geode::Function<void(AuthProgress)>;
 using AuthFuture = arc::Future<geode::Result<std::string>>;
 
-struct AuthOptions  {
+struct AuthOptions {
     AuthProgressCallback progress;
     std::optional<AccountData> account;
-    std::optional<std::string> serverUrl;
-    geode::Mod* requestedMod = geode::Mod::get();
-    /// Set to false to disable TLS certificate verification, only do this if you know what you are doing.
-    bool _danger_certVerification = true;
+    const _overrides& _overrides = g_overrides;
 };
 
 // Returns a future that will start authentication and return the authtoken once completed.
@@ -86,5 +89,28 @@ ARGON_DLL bool hasToken(std::optional<std::string_view> argonServerUrl = std::nu
 // If this returns true, all auth functions will likely immediately return success.
 // If `argonServerUrl` is null, assumes you're checking for the official Argon instance.
 ARGON_DLL bool hasToken(const AccountData& account, std::optional<std::string_view> argonServerUrl = std::nullopt);
+
+/// Overrides the server URL that will be used for Argon calls *from your mod*.
+/// Note: this does not set any global setting, this sets a static variable that is local to your mod specifically.
+/// All future calls to Argon functions, such as `startAuth` will use the provided argon server URL.
+/// If `std::nullopt` is passed, the default Argon server is used, which will not work with any GDPS.
+inline void overrideArgonServer(std::optional<std::string> serverUrl) {
+    g_overrides.serverUrl = std::move(serverUrl);
+}
+
+/// Overrides whether certificate verification is enabled for calls to Argon and GD servers.
+/// Note: this does not set any global setting, this sets a static variable that is local to your mod specifically.
+inline void overrideCertVerification(bool verifyCertificates) {
+    g_overrides.certVerification = verifyCertificates;
+}
+
+/// Opens the Argon account page in the user's browser. This page can be used to manage certain user settings.
+/// If you'd rather not open it in the browser, pass `openLink = false`. The URL is always returned by this function.
+///
+/// This is a future, because it requires requesting an auth code from the Argon server first, before opening the page.
+ARGON_DLL arc::Future<geode::Result<std::string>> openAccountPage(
+    std::optional<AccountData> data = std::nullopt,
+    const _overrides& overrides = g_overrides
+);
 
 }

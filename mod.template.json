@@ -12,5 +12,12 @@
     "developer": "dankmeme",
     "description": "Modern authentication API for Geometry Dash",
     "dependencies": {},
-    "settings": {}
+    "settings": {
+        "action-buttons": {
+            "type": "button",
+            "buttons": {
+                "website-login": "Website Login"
+            }
+        }
+    }
 }

@@ -68,6 +68,7 @@ struct Client {
     arc::Future<ArgonApiResult<ChallengeResponse>> sendLogin(std::span<const ChallengeType> supported);
     arc::Future<ArgonApiResult<VerifyResponse>> sendVerify(uint32_t challengeId, uint32_t answer);
     arc::Future<ArgonApiResult<RefreshResponse>> sendRefresh();
+    arc::Future<ArgonApiResult<WebTokenResponse>> sendGenerateWebToken();
 
     arc::Future<Result<>> sendGDUpdateProfile(UpdateProfilePayload payload);
     arc::Future<Result<>> sendGDSubmitComment(int32_t levelId, std::string content);
@@ -78,6 +79,7 @@ private:
 
     template <typename R, typename T>
     arc::Future<ArgonApiResult<R>> sendArgonRequest(T&& payload, std::string_view suffix) {
+        ARC_FRAME();
         using Payload = std::decay_t<T>;
 
         auto req = WebRequest()
@@ -113,9 +115,10 @@ private:
                 std::string code;
             };
 
-            auto s = glz::read_json<ErrorBody>(response.string().unwrapOrDefault());
+            auto resp = response.string().unwrapOrDefault();
+            auto s = glz::read_json<ErrorBody>(resp);
             if (!s) {
-                co_return Err(ArgonApiError::custom("Failed to parse server error response"));
+                co_return Err(ArgonApiError::custom(fmt::format("Failed to parse server error response (code {}): '{}'", response.code(), resp)));
             }
 
             co_return Err(ArgonApiError::fromArgonError(std::move(s->code), std::move(s->error)));

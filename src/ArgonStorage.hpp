@@ -54,10 +54,14 @@ class ArgonStorage : public SingletonBase<ArgonStorage> {
     ArgonStorage();
 
 public:
+    /// Note: server URL is the argon server, not boomlings
     std::optional<Token> getAccessToken(std::string_view serverUrl, const AccountData& account);
+    /// Note: server URL is the argon server, not boomlings
     std::optional<Token> getRefreshToken(std::string_view serverUrl, const AccountData& account);
 
+    /// Note: server URL is the argon server, not boomlings
     void storeRefreshToken(std::string_view serverUrl, const AccountData& account, std::string refreshToken, uint64_t expiry);
+    /// Note: server URL is the argon server, not boomlings
     void storeAccessToken(std::string_view serverUrl, const AccountData& account, std::string accessToken, uint64_t expiry);
 
     void clearAllTokens();
