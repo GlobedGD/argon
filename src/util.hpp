@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Geode/Result.hpp>
 #include <cocos2d.h>
 #include <utility>
 #include <mutex>
@@ -59,4 +60,14 @@ public:
 
 using CCMutex = CCData<std::mutex>;
 
+template <typename T, typename E>
+inline geode::Result<T> mapPrefix(geode::Result<T, E> result, std::string_view prefix) {
+    if (result) {
+        return result;
+    } else {
+        return geode::Err(fmt::format("{}: {}", prefix, result.unwrapErr()));
+    }
 }
+
+}
+

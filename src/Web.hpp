@@ -116,12 +116,14 @@ private:
             };
 
             auto resp = response.string().unwrapOrDefault();
-            auto s = glz::read_json<ErrorBody>(resp);
-            if (!s) {
+
+            ErrorBody body{};
+            auto s = glz::read<glz::opts{.error_on_unknown_keys = false}, ErrorBody>(body, resp);
+            if (s) {
                 co_return Err(ArgonApiError::custom(fmt::format("Failed to parse server error response (code {}): '{}'", response.code(), resp)));
             }
 
-            co_return Err(ArgonApiError::fromArgonError(std::move(s->code), std::move(s->error)));
+            co_return Err(ArgonApiError::fromArgonError(std::move(body.code), std::move(body.error)));
         }
     }
 

@@ -41,4 +41,8 @@ private:
 template <typename T>
 using ArgonApiResult = geode::Result<T, ArgonApiError>;
 
+inline auto format_as(const ArgonApiError& e) {
+    return e.toString();
+}
+
 }

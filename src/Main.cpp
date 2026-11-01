@@ -3,6 +3,7 @@
 #include "ArgonStorage.hpp"
 #include "Web.hpp"
 
+#include <asp/iter.hpp>
 #include <arc/time/Sleep.hpp>
 #include <asp/time/Duration.hpp>
 #include <Geode/Geode.hpp>
@@ -266,12 +267,51 @@ static Future<Result<web::RefreshResponse>> performChallenge(web::Client& client
 
     // if we reached here, this means all methods have failed!
     StringBuffer<> out;
-    out.append("All authentication methods failed:\n");
+    out.append("All authentication methods failed:\n\n");
     for (auto& f : failures) {
         out.append(" - {}\n", f);
     }
 
     co_return Err(out.str());
+}
+
+/// Polls the given future up to 2 times, the second time happens if the first time failed due to invalid/revoked refresh token
+template <typename T>
+static Future<Result<T>> withRefreshToken(web::Client& client, const _overrides& overrides, auto&& futProvider) {
+    auto& storage = ArgonStorage::get();
+    if (auto refreshToken = storage.getRefreshToken(getArgonServerUrl(overrides), client.m_account)) {
+        // first attempt
+        client.m_refreshToken = refreshToken->token;
+
+        auto result = co_await futProvider();
+        if (result) co_return result;
+
+        web::ArgonApiError err = std::move(result).unwrapErr();
+
+        // list of errors that indicate an invalid refresh token and can be resolved by reauthenticating
+        std::vector<std::string> softErrors {
+            "missing_scope",
+            "refresh_token_expired",
+            "legacy_token_not_allowed",
+            "invalid_token",
+        };
+
+        log::warn("received error from server: {}", err.toString());
+
+        if (!asp::iter::contains(softErrors, err.getArgonErrorCode().value_or(""))) {
+            co_return Err(err.toString());
+        }
+    }
+
+    // perform authentication again
+    storage.clearTokens(client.m_account.accountId);
+    AuthOptions opts{};
+    auto cResult = ARC_CO_UNWRAP(mapPrefix(co_await performChallenge(client, opts), "performChallenge failed"));
+    client.m_refreshToken = std::move(cResult.refresh_token);
+
+    // second attempt
+    auto result = co_await futProvider();
+    co_return result;
 }
 
 AuthFuture startAuth(AuthOptions options) {
@@ -325,17 +365,15 @@ Future<Result<std::string>> openAccountPage(std::optional<AccountData> data, con
 
     web::Client client {account, serverUrl, overrides.requestedMod, overrides.certVerification};
 
-    if (auto token = ArgonStorage::get().getRefreshToken(serverUrl, account)) {
-        client.m_refreshToken = token->token;
-    } else {
-        AuthOptions opts{};
-        auto result = ARC_CO_UNWRAP(co_await performChallenge(client, opts));
-        client.m_refreshToken = std::move(result.refresh_token);
+    auto result = co_await withRefreshToken<web::WebTokenResponse>(client, overrides, [&] -> Future<web::ArgonApiResult<web::WebTokenResponse>> {
+        co_return co_await client.sendGenerateWebToken();
+    });
+
+    if (!result) {
+        co_return Err("failed to generate webtoken: {}", result.unwrapErr());
     }
 
-    auto result = ARC_CO_UNWRAP(co_await client.sendGenerateWebToken());
-
-    auto url = fmt::format("{}/login?token={}", serverUrl, result.token);
+    auto url = fmt::format("{}/login?token={}", serverUrl, result.unwrap().token);
     utils::web::openLinkInBrowser(url);
 
     co_return Ok(std::move(url));
