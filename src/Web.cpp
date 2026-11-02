@@ -3,6 +3,7 @@
 #include <Geode/binding/GJMoreGamesLayer.hpp>
 #endif
 #include <Geode/loader/Mod.hpp>
+#include <Geode/utils/base64.hpp>
 #include <asp/iter.hpp>
 #include "external/sha1.hpp"
 
@@ -14,21 +15,18 @@
 using namespace arc;
 
 namespace argon::web {
-// TODO: reverse engineer the "encryption" and replace this all with geode base64
 
-static std::string base64Encode(const std::string& data) {
-    // trust me i did not want to use this but oh well
-    std::string ret = cocos2d::ZipUtils::base64URLEncode(data);
-    ret.resize(strlen(ret.c_str()));
-
-    return ret;
+static std::string base64Encode(std::string_view data) {
+    return utils::base64::encode(data, utils::base64::Base64Variant::UrlWithPad);
 }
 
-static std::string base64EncodeEnc(const std::string& data, std::string key) {
-    std::string ret = ZipUtils::base64EncodeEnc(data, key);
-    ret.resize(strlen(ret.c_str()));
-
-    return ret;
+static std::string base64EncodeEnc(std::string_view data, std::string_view key) {
+    std::string buf;
+    buf.resize(data.size(), '\0');
+    for (size_t i = 0; i < data.size(); i++) {
+        buf[i] = data[i] ^ key[i % key.size()];
+    }
+    return base64Encode(buf);
 }
 
 template <int GDVer, size_t Off, size_t Alt>
