@@ -46,11 +46,11 @@ struct Offset {
 // in the main game executable
 static constexpr
     GEODE_WINDOWS  (Offset<22091, 0x757cd8, 0x0>)
-    GEODE_ARM_MAC  (Offset<22081, 0x77d709, 0x0>)
-    GEODE_INTEL_MAC(Offset<22081, 0x868df0, 0x0>)
-    GEODE_ANDROID64(Offset<22081, 0xeccf90, 0x0>)
-    GEODE_ANDROID32(Offset<22081, 0x96c0db, 0x0>)
-    GEODE_IOS      (Offset<22081, 0x6b8cc2, 0x0>)
+    GEODE_ARM_MAC  (Offset<22091, 0x945f43, 0x0>)
+    GEODE_INTEL_MAC(Offset<22091, 0xa5ba79, 0x0>)
+    GEODE_ANDROID64(Offset<22091, 0x11498a0, 0x0>)
+    GEODE_ANDROID32(Offset<22091, 0xb9f4cb, 0x0>)
+    GEODE_IOS      (Offset<22091, 0x7f0f12, 0x0>)
 g_urlOffset;
 
 static_assert(g_urlOffset.valid, "Unsupported GD version");
