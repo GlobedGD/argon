@@ -220,7 +220,7 @@ static std::string commentChk(std::string_view username, std::string_view commen
     return chk;
 }
 
-Future<Result<>> Client::sendGDSubmitComment(int32_t levelId, std::string content) {
+Future<Result<int32_t>> Client::sendGDSubmitComment(int32_t levelId, std::string content) {
     auto comment = base64Encode(content);
     auto response = co_await this->sendGDRequest(
         Form{}
@@ -240,6 +240,29 @@ Future<Result<>> Client::sendGDSubmitComment(int32_t levelId, std::string conten
     auto str = response.string().unwrapOrDefault();
     if (str.empty() || str == "-1") {
         co_return Err(wrapError(response, "GD submit comment"));
+    }
+
+    auto commentId = utils::numFromString<int32_t>(str);
+    co_return Ok(ARC_CO_UNWRAP(commentId));
+}
+
+Future<Result<>> Client::sendGDDeleteComment(int32_t levelId, int32_t commentId) {
+    auto response = co_await this->sendGDRequest(
+        Form{}
+            .param("accountID", m_account.accountId)
+            .param("gjp2", m_account.gjp2)
+            .param("secret", "Wmfd2893gb7")
+            .param("levelID", levelId)
+            .param("gameVersion", "22")
+            .param("binaryVersion", "45")
+            .param("commentID", commentId),
+        "deleteGJComment20.php"
+    );
+
+    ARC_CO_UNWRAP_INTO(response, wrapResponse("GD delete comment", std::move(response)));
+    auto str = response.string().unwrapOrDefault();
+    if (str.empty() || str == "-1") {
+        co_return Err(wrapError(response, "GD delete comment"));
     }
 
     co_return Ok();

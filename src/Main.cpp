@@ -103,18 +103,62 @@ inline uint32_t solveChallenge(uint32_t value) {
     return static_cast<uint32_t>(s);
 }
 
-static Future<Result<>> submitSolution(web::Client& client, web::ChallengeResponse& response, uint32_t solution) {
+static Future<Result<>> cleanupChallenge(web::Client& client, web::ChallengeType type, int32_t resourceId, int32_t submittedId) {
+    switch (type) {
+        case web::ChallengeType::Comment: {
+            co_return co_await client.sendGDDeleteComment(resourceId, submittedId);
+        }
+
+        case web::ChallengeType::ProfileField: break;
+    }
+    co_return Ok();
+}
+
+struct ChallengeCleanup {
+    ChallengeCleanup(web::Client& client, web::ChallengeType type, int32_t resourceId, int32_t submittedId)
+        : m_client(std::make_unique<web::Client>(client)), m_type(type), m_resourceId(resourceId), m_submittedId(submittedId) {}
+
+    ChallengeCleanup(const ChallengeCleanup&) = delete;
+    ChallengeCleanup& operator=(const ChallengeCleanup&) = delete;
+    ChallengeCleanup(ChallengeCleanup&&) = default;
+    ChallengeCleanup& operator=(ChallengeCleanup&&) = default;
+
+    ~ChallengeCleanup() {
+        if (!m_client) return;
+
+        arc::spawn([client = std::move(m_client), type = m_type, resourceId = m_resourceId, submittedId = m_submittedId] mutable -> arc::Future<> {
+            auto result = co_await cleanupChallenge(*client, type, resourceId, submittedId);
+            if (!result) {
+                log::warn("Failed to clean up challenge submission: {}", result.unwrapErr());
+            } else {
+                log::info("Cleaned up challenge submission: resource {}, submitted {}", resourceId, submittedId);
+            }
+        });
+    }
+
+private:
+    std::unique_ptr<web::Client> m_client;
+    web::ChallengeType m_type;
+    int32_t m_resourceId;
+    int32_t m_submittedId;
+};
+
+static Future<Result<ChallengeCleanup>> submitSolution(web::Client& client, web::ChallengeResponse& response, uint32_t solution) {
+    int32_t submittedId = 0;
+
     if (response.type == web::ChallengeType::ProfileField) {
         ARC_CO_UNWRAP_INTO(auto data, co_await client.getGDCurrentProfileData());
         data.custom = fmt::format("argon-{}-{}", response.challenge_id, solution);
 
-        co_return co_await client.sendGDUpdateProfile(std::move(data));
+        ARC_CO_UNWRAP(co_await client.sendGDUpdateProfile(std::move(data)));
     } else if (response.type == web::ChallengeType::Comment) {
         auto content = fmt::format("argon-{}-{}", response.challenge_id, solution);
-        co_return co_await client.sendGDSubmitComment(response.resource_id, std::move(content));
+        submittedId = ARC_CO_UNWRAP(co_await client.sendGDSubmitComment(response.resource_id, std::move(content)));
     } else {
         co_return Err("Unknown challenge method");
     }
+
+    co_return Ok(ChallengeCleanup(client, response.type, response.resource_id, submittedId));
 }
 
 static Future<std::string> troubleshootFailureCause(web::Client& client, web::ChallengeType type) {
@@ -250,8 +294,8 @@ static Future<Result<web::RefreshResponse>> performChallenge(web::Client& client
                 break;
             }
 
-            log::warn("{} attempt failed: {}", result.usedType, err);
-            failures.push_back(fmt::format("{}: {}", result.usedType, err));
+            log::warn("{} attempt failed: {}", *result.usedType, err);
+            failures.push_back(fmt::format("{}: {}", *result.usedType, err));
 
             std::erase_if(supportedChallenges, [&](const auto& t) {
                 return t == result.usedType;

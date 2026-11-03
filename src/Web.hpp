@@ -71,7 +71,8 @@ struct Client {
     arc::Future<ArgonApiResult<WebTokenResponse>> sendGenerateWebToken();
 
     arc::Future<Result<>> sendGDUpdateProfile(UpdateProfilePayload payload);
-    arc::Future<Result<>> sendGDSubmitComment(int32_t levelId, std::string content);
+    arc::Future<Result<int32_t>> sendGDSubmitComment(int32_t levelId, std::string content);
+    arc::Future<Result<>> sendGDDeleteComment(int32_t levelId, int32_t commentId);
     arc::Future<Result<UpdateProfilePayload>> getGDCurrentProfileData();
 
 private:
