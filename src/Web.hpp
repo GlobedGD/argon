@@ -8,6 +8,13 @@ namespace argon::web {
 
 std::string getBaseServerUrl();
 
+enum class Method {
+    Get,
+    Post,
+    Put,
+    Delete,
+};
+
 struct UpdateProfilePayload {
     int messages;
     int friendRequests;
@@ -58,6 +65,25 @@ struct Form {
     }
 };
 
+template <typename T, auto Opts = glz::opts{.error_on_unknown_keys = false}>
+ArgonApiResult<T> parseJson(std::string_view str) {
+    T val{};
+    glz::error_ctx err = glz::read<Opts, T>(val, str);
+    if (err) {
+        auto& msg = err.custom_error_message;
+        asp::BoxedString str;
+        if (msg.empty()) {
+            str = fmt::format("Failed to parse JSON: json error {}", (int)err.ec);
+        } else {
+            str = fmt::format("Failed to parse JSON: {}", msg);
+        }
+
+        return Err(ArgonApiError::custom(std::move(str)));
+    }
+
+    return Ok(std::move(val));
+}
+
 struct Client {
     AccountData m_account;
     std::string m_serverUrl;
@@ -65,21 +91,39 @@ struct Client {
     bool m_certVerification = true;
     std::string m_refreshToken;
 
-    arc::Future<ArgonApiResult<ChallengeResponse>> sendLogin(std::span<const ChallengeType> supported);
-    arc::Future<ArgonApiResult<VerifyResponse>> sendVerify(uint32_t challengeId, uint32_t answer);
-    arc::Future<ArgonApiResult<RefreshResponse>> sendRefresh();
-    arc::Future<ArgonApiResult<WebTokenResponse>> sendGenerateWebToken();
+    Client(AccountData account, std::string serverUrl, Mod* reqMod, bool certVerification)
+        : m_account(std::move(account)),
+          m_serverUrl(std::move(serverUrl)),
+          m_reqMod(reqMod),
+          m_certVerification(certVerification) {}
 
-    arc::Future<Result<>> sendGDUpdateProfile(UpdateProfilePayload payload);
-    arc::Future<Result<int32_t>> sendGDSubmitComment(int32_t levelId, std::string content);
-    arc::Future<Result<>> sendGDDeleteComment(int32_t levelId, int32_t commentId);
-    arc::Future<Result<UpdateProfilePayload>> getGDCurrentProfileData();
+    Client(const Client&) = default;
+    Client& operator=(const Client&) = default;
+    Client(Client&&) noexcept = default;
+    Client& operator=(Client&&) noexcept = default;
+
+    Future<ArgonApiResult<ChallengeResponse>> sendLogin(std::span<const ChallengeType> supported);
+    Future<ArgonApiResult<VerifyResponse>> sendVerify(uint32_t challengeId, uint32_t answer);
+    Future<ArgonApiResult<RefreshResponse>> sendRefresh();
+    Future<ArgonApiResult<WebTokenResponse>> sendGenerateWebToken();
+
+    // discord
+    Future<ArgonApiResult<DiscordLinkStateResponse>> sendGetDiscordState();
+    Future<ArgonApiResult<Oauth2RedirectResponse>> sendDiscordLink();
+    Future<ArgonApiResult<Oauth2RedirectResponse>> sendDiscordSync();
+    Future<ArgonApiResult<void>> sendDiscordUnlink();
+
+    // gd requests
+    Future<Result<>> sendGDUpdateProfile(UpdateProfilePayload payload);
+    Future<Result<int32_t>> sendGDSubmitComment(int32_t levelId, std::string content);
+    Future<Result<>> sendGDDeleteComment(int32_t levelId, int32_t commentId);
+    Future<Result<UpdateProfilePayload>> getGDCurrentProfileData();
 
 private:
     static std::string getUserAgent();
 
-    template <typename R, typename T>
-    arc::Future<ArgonApiResult<R>> sendArgonRequest(T&& payload, std::string_view suffix) {
+    template <typename R, Method M = Method::Post, typename T = std::monostate>
+    Future<ArgonApiResult<R>> sendArgonRequest(std::string_view suffix, T&& payload = std::monostate{}) {
         ARC_FRAME();
         using Payload = std::decay_t<T>;
 
@@ -88,7 +132,7 @@ private:
             .certVerification(m_certVerification)
             .timeout(std::chrono::seconds(10));
 
-        if constexpr (!std::is_void_v<Payload>) {
+        if constexpr (!std::is_same_v<Payload, std::monostate>) {
             req.bodyString(glz::write_json(payload).value());
             req.header("Content-Type", "application/json");
         }
@@ -98,15 +142,19 @@ private:
         }
 
         std::string url = fmt::format("{}/{}", m_serverUrl, suffix);
-        auto response = co_await req.post(std::move(url));
+        std::string method;
+        switch (M) {
+            case Method::Get: method = "GET"; break;
+            case Method::Post: method = "POST"; break;
+            case Method::Put: method = "PUT"; break;
+            case Method::Delete: method = "DELETE"; break;
+            default: method = "POST"; break;
+        }
+
+        auto response = co_await req.send(std::move(method), std::move(url));
         if (response.ok()) {
             if constexpr (!std::is_void_v<R>) {
-                auto s = glz::read_json<R>(response.string().unwrapOrDefault());
-                if (s) {
-                    co_return Ok(std::move(s).value());
-                } else {
-                    co_return Err(ArgonApiError::custom("Failed to parse server response"));
-                }
+                co_return parseJson<R>(response.string().unwrapOrDefault());
             } else {
                 co_return Ok();
             }
@@ -116,19 +164,21 @@ private:
                 std::string code;
             };
 
-            auto resp = response.string().unwrapOrDefault();
-
-            ErrorBody body{};
-            auto s = glz::read<glz::opts{.error_on_unknown_keys = false}, ErrorBody>(body, resp);
-            if (s) {
-                co_return Err(ArgonApiError::custom(fmt::format("Failed to parse server error response (code {}): '{}'", response.code(), resp)));
+            auto raw = response.string().unwrapOrDefault();
+            auto parseResult = parseJson<ErrorBody>(raw);
+            if (!parseResult) {
+                log::warn("Request to '{}' failed and error could not be parsed, code {}, body: {}", suffix, response.code(), raw);
+                co_return Err(ArgonApiError::custom(fmt::format(
+                    "Server returned code {} and parsing error response failed: {}", response.code(), parseResult.unwrapErr()
+                )));
             }
 
+            auto body = std::move(parseResult).unwrap();
             co_return Err(ArgonApiError::fromArgonError(std::move(body.code), std::move(body.error)));
         }
     }
 
-    arc::Future<utils::web::WebResponse> sendGDRequest(
+    Future<utils::web::WebResponse> sendGDRequest(
         std::optional<Form> payload,
         std::string_view suffix
     );

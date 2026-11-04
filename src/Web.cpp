@@ -140,7 +140,7 @@ Future<ArgonApiResult<ChallengeResponse>> Client::sendLogin(std::span<const Chal
         std::vector<ChallengeType>{supported.begin(), supported.end()}
     };
 
-    co_return co_await this->sendArgonRequest<ChallengeResponse>(payload, "v2/account/login");
+    co_return co_await this->sendArgonRequest<ChallengeResponse>("v2/account/login", payload);
 }
 
 struct VerifyPayload {
@@ -152,15 +152,31 @@ struct VerifyPayload {
 Future<ArgonApiResult<VerifyResponse>> Client::sendVerify(uint32_t challengeId, uint32_t answer) {
     VerifyPayload payload { challengeId, m_account.accountId, answer };
 
-    co_return co_await this->sendArgonRequest<VerifyResponse>(payload, "v2/account/login/verify");
+    co_return co_await this->sendArgonRequest<VerifyResponse>("v2/account/login/verify", payload);
 }
 
 Future<ArgonApiResult<RefreshResponse>> Client::sendRefresh() {
-    return this->sendArgonRequest<RefreshResponse>(std::monostate{}, "v2/account/refresh");
+    return this->sendArgonRequest<RefreshResponse>("v2/account/refresh");
 }
 
 Future<ArgonApiResult<WebTokenResponse>> Client::sendGenerateWebToken() {
-    return this->sendArgonRequest<WebTokenResponse>(std::monostate{}, "v2/account/webtoken");
+    return this->sendArgonRequest<WebTokenResponse>("v2/account/webtoken");
+}
+
+Future<ArgonApiResult<DiscordLinkStateResponse>> Client::sendGetDiscordState() {
+    return this->sendArgonRequest<DiscordLinkStateResponse, Method::Get>("v2/account/discord");
+}
+
+Future<ArgonApiResult<Oauth2RedirectResponse>> Client::sendDiscordLink() {
+    return this->sendArgonRequest<Oauth2RedirectResponse>("v2/account/discord/link");
+}
+
+Future<ArgonApiResult<Oauth2RedirectResponse>> Client::sendDiscordSync() {
+    return this->sendArgonRequest<Oauth2RedirectResponse>("v2/account/discord/sync");
+}
+
+Future<ArgonApiResult<void>> Client::sendDiscordUnlink() {
+    return this->sendArgonRequest<void, Method::Delete>("v2/account/discord");
 }
 
 Future<utils::web::WebResponse> Client::sendGDRequest(

@@ -7,6 +7,8 @@
 #include <stdint.h>
 #include <glaze/glaze.hpp>
 
+#include <argon/discord.hpp>
+
 using namespace asp::data;
 using namespace geode::prelude;
 using geode::utils::web::WebRequest;
@@ -51,6 +53,15 @@ struct RefreshResponse {
 
 struct WebTokenResponse {
     std::string token;
+};
+
+struct DiscordLinkStateResponse {
+    bool linked;
+    std::optional<discord::UserData> discord_user;
+};
+
+struct Oauth2RedirectResponse {
+    std::string authorize_url;
 };
 
 static CowString truncate(std::string_view s, size_t maxSize = 128) {
@@ -115,4 +126,22 @@ struct ::glz::meta<argon::web::ChallengeType> {
         "comment", Comment,
         "profile_field", ProfileField
     );
+};
+
+template <>
+struct ::glz::meta<asp::SystemTime> {
+    static constexpr auto read = [](asp::SystemTime& time, const std::string& input, glz::context& ctx) {
+        if (auto parsed = asp::SystemTime::parse(input, asp::TzPolicy::AssumeUtc)) {
+            time = *parsed;
+        } else {
+            ctx.error = glz::error_code::constraint_violated;
+            ctx.custom_error_message = "invalid SystemTime";
+        }
+    };
+
+    static constexpr auto write = [](const asp::SystemTime& time) {
+        return time.toString(true);
+    };
+
+    static constexpr auto value = glz::custom<read, write>;
 };
