@@ -89,27 +89,4 @@ If you had an API key issued to you for better rate limits, please contact me on
 
 ### Discord linking
 
-While not a change per se, Argon now has a centralized solution for linking GD accounts with Discord accounts. If you want to receive the data about the user's linked account, you can request it using the same endpoint, `POST /v2/token/validate`, by including `"include_discord": true`:
-```json
-{
-    "token": "....",
-    "include_discord": true
-}
-```
-
-If the token is valid and the user is linked to a Discord account, the response will include a `discord_user` object:
-```json
-{
-    "valid": true,
-    "account_data": {
-        "account_id": 29843187,
-        "user_id": 256456125,
-        "username": "globedbotxd13"
-    },
-    "discord_user": {
-        "id": 612930885230002208,
-        "username": "dank_meme01",
-        "avatar_url": "https://cdn.discordapp.com/avatars/612930885230002208/7022f122ed40fa8837666706d12efc55.webp?size=1024"
-    }
-}
-```
+While not a change per se, Argon now has a centralized solution for linking GD accounts with Discord accounts. See the [README](/README.md) for more details.
