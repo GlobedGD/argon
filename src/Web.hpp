@@ -130,7 +130,7 @@ private:
         auto req = WebRequest()
             .userAgent(getUserAgent())
             .certVerification(m_certVerification)
-            .timeout(std::chrono::seconds(10));
+            .timeout(asp::Duration::fromSecs(10));
 
         if constexpr (!std::is_same_v<Payload, std::monostate>) {
             req.bodyString(glz::write_json(payload).value());

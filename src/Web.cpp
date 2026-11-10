@@ -186,7 +186,7 @@ Future<utils::web::WebResponse> Client::sendGDRequest(
     auto req = WebRequest()
         .userAgent("")
         .certVerification(m_certVerification)
-        .timeout(std::chrono::seconds(10));
+        .timeout(asp::Duration::fromSecs(10));
 
     if (payload) {
         req.bodyString(payload->str());
