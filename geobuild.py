@@ -5,6 +5,8 @@ if TYPE_CHECKING:
 def main(build: Build):
     config = build.config
 
+    install = build.add_option("ARGON_INSTALL", False, "Install mod after building for Android")
+
     build.add_include_dir("src")
     build.add_include_dir("include")
     build.add_source_dir("src/*.cpp", recursive=True)
@@ -18,3 +20,11 @@ def main(build: Build):
     # ]
 
     build.add_cpm_dep("stephenberry/glaze", "v8.0.0", link_name="glaze::glaze")
+
+    if install:
+        build.enable_hooks()
+
+def post_build(ctx: HookContext):
+    if ctx.platform.is_android() and adb.is_device_connected():
+        adb.install(ctx.build_dir / "dankmeme.argon.geode")
+        adb.launch_game()
