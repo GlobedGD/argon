@@ -41,7 +41,7 @@ jobs:
         with:
           combine: true
           target: ${{ matrix.config.target }}
-          sdk: 'latest'
+          sdk: 'nightly'
           export-pdb: true
           export-symbols: true
 
