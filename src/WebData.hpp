@@ -5,6 +5,9 @@
 #include <asp/data/Cow.hpp>
 #include <string>
 #include <stdint.h>
+#include <glaze/glaze.hpp>
+
+#include <argon/discord.hpp>
 
 using namespace asp::data;
 using namespace geode::prelude;
@@ -13,12 +16,52 @@ using geode::utils::web::WebResponse;
 
 namespace argon::web {
 
-struct Stage1ResponseData {
-    std::string method;
-    int id;
-    uint32_t challengeId;
-    int challenge;
-    std::string ident;
+enum class ChallengeType {
+    Comment,
+    ProfileField,
+};
+
+inline std::string_view format_as(ChallengeType type) {
+    switch (type) {
+        case ChallengeType::Comment: return "comment";
+        case ChallengeType::ProfileField: return "profile_field";
+        default: return "unknown";
+    }
+}
+
+struct ChallengeResponse {
+    ChallengeType type;
+    int32_t resource_id;
+    uint32_t challenge_id;
+    uint32_t secret;
+};
+
+struct VerifyResponse {
+    bool completed;
+    std::optional<std::string> refresh_token;
+    std::optional<uint64_t> refresh_token_valid_until;
+    std::optional<std::string> access_token;
+    std::optional<uint64_t> access_token_valid_until;
+};
+
+struct RefreshResponse {
+    std::string refresh_token;
+    uint64_t refresh_token_valid_until;
+    std::string access_token;
+    uint64_t access_token_valid_until;
+};
+
+struct WebTokenResponse {
+    std::string token;
+};
+
+struct DiscordLinkStateResponse {
+    bool linked;
+    std::optional<discord::UserData> discord_user;
+};
+
+struct Oauth2RedirectResponse {
+    std::string authorize_url;
 };
 
 static CowString truncate(std::string_view s, size_t maxSize = 128) {
@@ -34,7 +77,6 @@ static CowString truncate(std::string_view s, size_t maxSize = 128) {
         return CowString::fromBorrowed(s);
     }
 }
-
 
 static std::string wrapError(WebResponse& response, std::string_view what) {
     auto str = response.string().unwrapOrDefault();
@@ -75,40 +117,31 @@ static std::string wrapError(WebResponse& response, std::string_view what) {
     }
 }
 
-template <typename T>
-geode::Result<T> extractData(geode::utils::web::WebResponse& resp) {
-    GEODE_UNWRAP_INTO(auto json, resp.json());
-
-    bool success = json["success"].asBool().unwrapOr(false);
-    if (!success) {
-        auto error = json["error"].asString().unwrapOr("Malformed server response (no error message)");
-        return Err(wrapError(resp, std::move(error)));
-    }
-
-    return json["data"].as<T>();
 }
 
-}
+template <>
+struct ::glz::meta<argon::web::ChallengeType> {
+    using enum argon::web::ChallengeType;
+    static constexpr auto value = glz::enumerate(
+        "comment", Comment,
+        "profile_field", ProfileField
+    );
+};
 
-template<>
-struct matjson::Serialize<argon::web::Stage1ResponseData> {
-    static geode::Result<argon::web::Stage1ResponseData> fromJson(const Value& value) {
-        auto method = value["method"].asString();
-        auto id = value["id"].as<int>();
-        auto challengeId = value["challengeId"].as<uint32_t>();
-        auto challenge = value["challenge"].as<int>();
-        auto ident = value["ident"].asString();
-
-        if (!method || !id || !challengeId || !challenge || !ident) {
-            return geode::Err("Malformed Stage1ResponseData: missing required fields");
+template <>
+struct ::glz::meta<asp::SystemTime> {
+    static constexpr auto read = [](asp::SystemTime& time, const std::string& input, glz::context& ctx) {
+        if (auto parsed = asp::SystemTime::parse(input, asp::TzPolicy::AssumeUtc)) {
+            time = *parsed;
+        } else {
+            ctx.error = glz::error_code::constraint_violated;
+            ctx.custom_error_message = "invalid SystemTime";
         }
+    };
 
-        return geode::Ok(argon::web::Stage1ResponseData {
-            .method = std::move(method).unwrap(),
-            .id = std::move(id).unwrap(),
-            .challengeId = std::move(challengeId).unwrap(),
-            .challenge = std::move(challenge).unwrap(),
-            .ident = std::move(ident).unwrap()
-        });
-    }
+    static constexpr auto write = [](const asp::SystemTime& time) {
+        return time.toString(true);
+    };
+
+    static constexpr auto value = glz::custom<read, write>;
 };

@@ -1,0 +1,23 @@
+{
+    "geode": "6.0.0-alpha.1",
+    "gd": {
+        "win": "2.2091",
+        "android": "2.2091",
+        "mac": "2.2091",
+        "ios": "2.2091"
+    },
+    "id": "dankmeme.argon",
+    "name": "Argon",
+    "version": "v2.0.0-beta.1",
+    "developer": "dankmeme",
+    "description": "Modern authentication API for Geometry Dash",
+    "dependencies": {},
+    "settings": {
+        "action-buttons": {
+            "type": "button",
+            "buttons": {
+                "website-login": "Website Login"
+            }
+        }
+    }
+}
