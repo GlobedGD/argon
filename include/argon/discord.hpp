@@ -5,8 +5,8 @@ namespace argon::discord {
 
 struct UserData {
     uint64_t id;
-    std::string username;
-    std::string avatar_url;
+    std::optional<std::string> username;
+    std::optional<std::string> avatar_url;
     asp::SystemTime last_sync_time;
 };
 

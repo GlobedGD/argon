@@ -139,6 +139,10 @@ The token validation endpoint will always return the account data that's embedde
 
 ### Use TLS
 
+## Credits
+
+* [Dasshu](https://github.com/DasshuDev/) - for making the logo!
+
 Prefer using end-to-end encrypted transports like HTTPS or WSS for sending the token from the client to your backend.
 
 ## Discord linking
@@ -208,3 +212,7 @@ If the token is valid and the user is linked to a Discord account, the response 
     }
 }
 ```
+
+## Credits
+
+* [Dasshu](https://github.com/DasshuDev/) - for making the logo!

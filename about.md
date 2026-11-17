@@ -10,3 +10,7 @@ Benefits compared to some of the other auth APIs (Globed, DashAuth, GDAuth):
 * Our official instance is whitelisted by RobTop, which means authentication is faster and more reliable against IP blocks
 * Ability to retrieve user's username without making requests to the GD server (with just their token)
 * Automatic troubleshooter for figuring out the cause of auth issues (for example invalid session)
+
+## Credits
+
+* [Dasshu](https://github.com/DasshuDev/) - for making the logo!
