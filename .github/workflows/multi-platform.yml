@@ -33,6 +33,7 @@ jobs:
           sdk: '6.0.0-beta.1'
           export-pdb: true
           build-config: ${{ matrix.config.target == 'win' && 'RelWithDebInfo' || 'Release' }}
+          use-lto: true
 
   merge:
     name: Merge
