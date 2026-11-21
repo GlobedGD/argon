@@ -29,7 +29,8 @@ jobs:
         with:
           target: ${{ matrix.config.target }}
           upload: true
-          sdk: 'latest'
+          # TODO: hardcoded until latest is supported
+          sdk: '6.0.0-beta.1'
           export-pdb: true
           export-symbols: true
 
