@@ -21,6 +21,10 @@ def main(build: Build):
 
     build.add_cpm_dep("stephenberry/glaze", "v8.0.0", link_name="glaze::glaze")
 
+    # TODO: temp until geode beta 2 or v6.0.0
+    if build.platform.is_windows():
+        build.add_link_options("-Xlinker", "/OPT:REF")
+
     if install:
         build.enable_hooks()
 
