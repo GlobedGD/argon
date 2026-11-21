@@ -1,3 +1,14 @@
+# 2.0.0
+
+For Geometry Dash 2.209, Argon has been changed to be a *mod* instead of a plain C++ dependency, which simplifies updating by a lot. This update also redesigned the API, added more features like Discord linking and a website for managing your account.
+
+Some other notable changes:
+* `/v1/` routes are now **deprecated**. Client-side routes will stay working for the foreseeable future, so 2.2081 still works. Server-side v1 routes will be removed and mods must migrate to v2 as soon as possible.
+* "Strong" auth is no longer a concept on Argon's side - instead it's now up to the mod developer. Argon always returns user ID and username in the validate endpoint, so it's fine to just use those as ground truth.
+* Tokens returned by `startAuth` are short lived, and must not be stored or cached. They are valid for verification for a short period of time until they expire.
+* More things are properly thread safe and more things are overridable
+* Token is no longer stored locally in plaintext (security by obscurity, meh)
+
 # 1.5.1
 
 * Add support for GDPS switcher / Server API mod, Argon will now correctly use GDPS endpoints when connected to a GDPS via these mods

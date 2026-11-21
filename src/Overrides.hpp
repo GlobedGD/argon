@@ -7,7 +7,6 @@ using namespace geode::prelude;
 
 namespace argon {
 
-// TODO: change on release
 static const std::string_view g_officialServer = "https://argon.globed.dev";
 
 static std::string getArgonServerUrl(const _overrides& overrides) {
