@@ -29,6 +29,9 @@ jobs:
         with:
           target: ${{ matrix.config.target }}
           upload: true
+          sdk: 'latest'
+          export-pdb: true
+          export-symbols: true
 
   merge:
     name: Merge
