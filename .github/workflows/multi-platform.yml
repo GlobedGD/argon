@@ -32,7 +32,7 @@ jobs:
           # TODO: hardcoded until latest is supported
           sdk: '6.0.0-beta.1'
           export-pdb: true
-          build-config: RelWithDebInfo
+          build-config: ${{ matrix.config.target == 'win' && 'RelWithDebInfo' || 'Release' }}
 
   merge:
     name: Merge
