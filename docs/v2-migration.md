@@ -11,7 +11,7 @@ and instead add Argon as a `mod.json` dependency:
 
 ```json
 "dependencies": {
-    "dankmeme.argon": ">=2.0.0"
+    "dankmeme.argon": ">=2.0.0-beta.1"
 }
 ```
 
