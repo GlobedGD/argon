@@ -30,10 +30,9 @@ jobs:
           target: ${{ matrix.config.target }}
           upload: true
           # TODO: hardcoded until latest is supported
-          sdk: '6.0.0-beta.1'
+          sdk: 'latest'
           export-pdb: true
           build-config: ${{ matrix.config.target == 'win' && 'RelWithDebInfo' || 'Release' }}
-          use-lto: true
 
   merge:
     name: Merge
